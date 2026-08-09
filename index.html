@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>猜字拼圖</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css?v=16" />
+</head>
+<body>
+  <div class="bg-wash" aria-hidden="true"></div>
+
+  <!-- 選單畫面 -->
+  <main id="setup" class="screen setup-screen">
+    <header class="brand">
+      <p class="brand-mark">猜字拼圖</p>
+      <p class="brand-sub">點開拼圖，慢慢露出底下的字</p>
+    </header>
+
+    <section class="setup-panel" aria-labelledby="setup-title">
+      <h1 id="setup-title" class="visually-hidden">選擇單元</h1>
+
+      <label class="field">
+        <span class="field-label">冊別</span>
+        <select id="book-select" disabled>
+          <option value="">讀取中…</option>
+        </select>
+      </label>
+
+      <label class="field">
+        <span class="field-label">單元</span>
+        <select id="unit-select" disabled>
+          <option value="">請先選擇冊別</option>
+        </select>
+      </label>
+
+      <p id="preview" class="preview" aria-live="polite"></p>
+
+      <div class="setup-actions">
+        <button id="start-btn" class="btn btn-primary" type="button" disabled>
+          開始教學（全螢幕）
+        </button>
+        <button id="reload-btn" class="btn btn-ghost" type="button">重新載入試算表</button>
+      </div>
+
+      <p id="status" class="status" role="status"></p>
+    </section>
+  </main>
+
+  <!-- 教學全螢幕 -->
+  <section id="teach" class="screen teach-screen" hidden>
+    <header class="teach-bar">
+      <div class="teach-meta">
+        <span id="teach-unit" class="chip"></span>
+        <span id="teach-progress" class="chip chip-muted"></span>
+      </div>
+      <div class="teach-actions">
+        <button id="reveal-btn" class="btn btn-soft" type="button">全部揭開</button>
+        <button id="show-answer-btn" class="btn btn-soft" type="button">顯示答案</button>
+        <button id="next-btn" class="btn btn-primary" type="button">下一字</button>
+        <button id="exit-btn" class="btn btn-ghost" type="button">結束</button>
+      </div>
+    </header>
+
+    <div class="stage-wrap">
+      <div id="board" class="board" aria-label="猜字拼圖板">
+        <div id="char-layer" class="char-layer" aria-hidden="true">
+          <span class="char-base">永</span>
+          <span class="char-radical">永</span>
+        </div>
+        <div id="tiles" class="tiles" role="group" aria-label="拼圖片"></div>
+      </div>
+      <p id="hint" class="hint">點選彩色拼圖，露出底下的字</p>
+    </div>
+
+    <div id="answer-toast" class="answer-toast" hidden>
+      <span>答案是</span>
+      <strong id="answer-char"></strong>
+    </div>
+
+    <div id="done-overlay" class="done-overlay" hidden>
+      <div class="done-card">
+        <p class="done-title">本單元完成</p>
+        <p class="done-sub">所有生字都猜過了</p>
+        <button id="done-exit-btn" class="btn btn-primary" type="button">回到選單</button>
+      </div>
+    </div>
+  </section>
+
+  <script src="app.js?v=6"></script>
+</body>
+</html>
