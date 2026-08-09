@@ -63,6 +63,8 @@
     nextUnitBtn: document.getElementById("next-unit-btn"),
     doneMenuBtn: document.getElementById("done-menu-btn"),
     termPoolBtn: document.getElementById("term-pool-btn"),
+    termPoolFab: document.getElementById("term-pool-fab"),
+    fabStack: document.getElementById("fab-stack"),
     vocabBtn: document.getElementById("vocab-btn"),
     vocabPanel: document.getElementById("vocab-panel"),
     vocabCloseBtn: document.getElementById("vocab-close-btn"),
@@ -181,9 +183,15 @@
   }
 
   function updateTermPoolBtn() {
+    const label = `語詞庫（${termPool.length}）`;
+    const empty = termPool.length === 0;
     if (els.termPoolBtn) {
-      els.termPoolBtn.textContent = `語詞庫（${termPool.length}）`;
-      els.termPoolBtn.disabled = termPool.length === 0;
+      els.termPoolBtn.textContent = label;
+      els.termPoolBtn.disabled = empty;
+    }
+    if (els.termPoolFab) {
+      els.termPoolFab.textContent = label;
+      els.termPoolFab.disabled = empty;
     }
   }
 
@@ -622,7 +630,8 @@
     stopAutoReveal();
     els.setup.hidden = true;
     els.teach.hidden = false;
-    els.vocabBtn.hidden = false;
+    if (els.fabStack) els.fabStack.hidden = false;
+    if (els.vocabBtn) els.vocabBtn.hidden = false;
     closeVocabPanel();
 
     showChar(queue[index]);
@@ -665,6 +674,7 @@
     els.doneOverlay.hidden = true;
     els.answerToast.hidden = true;
     els.vocabBtn.hidden = true;
+    if (els.fabStack) els.fabStack.hidden = true;
     closeVocabPanel();
     nextBusy = false;
 
@@ -871,6 +881,9 @@
     });
     els.doneMenuBtn.addEventListener("click", exitTeach);
     els.termPoolBtn.addEventListener("click", openTermPoolPage);
+    if (els.termPoolFab) {
+      els.termPoolFab.addEventListener("click", openTermPoolPage);
+    }
     els.vocabBtn.addEventListener("click", () => {
       if (els.vocabPanel.hidden) openVocabPanel();
       else closeVocabPanel();

@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="styles.css?v=22" />
+  <link rel="stylesheet" href="styles.css?v=23" />
 </head>
 <body>
   <div class="bg-wash" aria-hidden="true"></div>
@@ -111,7 +111,10 @@
       </div>
     </div>
 
-    <button id="vocab-btn" class="vocab-fab" type="button" hidden>常用語詞</button>
+    <div id="fab-stack" class="fab-stack" hidden>
+      <button id="vocab-btn" class="vocab-fab" type="button">常用語詞</button>
+      <button id="term-pool-fab" class="vocab-fab term-pool-fab" type="button">語詞庫（0）</button>
+    </div>
     <aside id="vocab-panel" class="vocab-panel" hidden>
       <header class="vocab-panel-head">
         <div>
@@ -125,6 +128,6 @@
     </aside>
   </section>
 
-  <script src="app.js?v=23"></script>
+  <script src="app.js?v=24"></script>
 </body>
 </html>
