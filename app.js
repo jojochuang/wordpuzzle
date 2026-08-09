@@ -1,5 +1,8 @@
 (() => {
   const SHEET_ID = "1MxROi0vIZ2Dk1doq3jJWlP28_t2R7j7q8N4h1YCs8Qc";
+  const VOCAB_SHEET_ID = "17bjNhzlQH43hE3k27ZzRVLZYX3Vt1vEqQXSncy2ADI4";
+  const VOCAB_GID = "1950889734";
+  const VOCAB_RANGE = "A2:CZ2882";
 
   /** 試算表分頁：A 欄單元、B 欄生字 */
   const BOOKS = [
@@ -59,6 +62,12 @@
     replayUnitBtn: document.getElementById("replay-unit-btn"),
     nextUnitBtn: document.getElementById("next-unit-btn"),
     doneMenuBtn: document.getElementById("done-menu-btn"),
+    vocabBtn: document.getElementById("vocab-btn"),
+    vocabPanel: document.getElementById("vocab-panel"),
+    vocabCloseBtn: document.getElementById("vocab-close-btn"),
+    vocabPanelSub: document.getElementById("vocab-panel-sub"),
+    vocabStatus: document.getElementById("vocab-status"),
+    vocabList: document.getElementById("vocab-list"),
   };
 
   /** @type {Record<string, {unit: string, chars: string[]}[]>} */
@@ -71,6 +80,9 @@
   let autoRevealTimer = null;
   let confettiRaf = null;
   let nextBusy = false;
+  /** @type {string[] | null} */
+  let vocabTerms = null;
+  let vocabLoading = null;
   const correctAudio = new Audio("sounds/correct.mp3");
   correctAudio.preload = "auto";
   correctAudio.load();
@@ -89,6 +101,113 @@
 
   function sheetCsvUrl(gid) {
     return `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&gid=${gid}`;
+  }
+
+  function vocabGvizUrl() {
+    return `https://docs.google.com/spreadsheets/d/${VOCAB_SHEET_ID}/gviz/tq?gid=${VOCAB_GID}&range=${encodeURIComponent(VOCAB_RANGE)}&tqx=out:json`;
+  }
+
+  function parseGvizJson(text) {
+    const start = text.indexOf("{");
+    const end = text.lastIndexOf("}");
+    if (start === -1 || end === -1) throw new Error("GViz 回應格式不正確");
+    const obj = JSON.parse(text.slice(start, end + 1));
+    const rows = obj?.table?.rows || [];
+    return rows.map((row) =>
+      (row?.c || []).map((c) =>
+        c && (c.v ?? c.f) != null ? String(c.v ?? c.f) : ""
+      )
+    );
+  }
+
+  /** 與語詞搜尋工具相同：去括號、去數字，並去掉 IVS 後去重 */
+  function tokenizeVocabCell(cellText) {
+    return String(cellText || "")
+      .replace(/\r/g, "\n")
+      .split(/[\n,，、；;]+/g)
+      .map((s) =>
+        s
+          .replace(/\([^)]*\)/g, "")
+          .replace(/（[^）]*）/g, "")
+          .replace(/[0-9０-９]+/g, "")
+          .replace(/[\uFE00-\uFE0F]/g, "")
+          .replace(/[\u{E0100}-\u{E01EF}]/gu, "")
+          .replace(/[\u200B-\u200D\uFEFF]/g, "")
+          .trim()
+      )
+      .filter(Boolean);
+  }
+
+  async function loadVocabTerms() {
+    if (vocabTerms) return vocabTerms;
+    if (vocabLoading) return vocabLoading;
+
+    vocabLoading = (async () => {
+      const res = await fetch(vocabGvizUrl(), { cache: "no-store" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const rows = parseGvizJson(await res.text());
+      const terms = [];
+      for (const row of rows) {
+        for (let j = 6; j < row.length; j += 1) {
+          if (!row[j]) continue;
+          terms.push(...tokenizeVocabCell(row[j]));
+        }
+      }
+      vocabTerms = Array.from(new Set(terms));
+      return vocabTerms;
+    })();
+
+    try {
+      return await vocabLoading;
+    } finally {
+      vocabLoading = null;
+    }
+  }
+
+  function findVocabForChar(ch) {
+    if (!ch || !vocabTerms) return [];
+    return vocabTerms.filter((term) => term.length >= 2 && term.includes(ch));
+  }
+
+  function closeVocabPanel() {
+    els.vocabPanel.hidden = true;
+  }
+
+  function renderVocabList(terms, ch) {
+    els.vocabPanelSub.textContent = `含「${ch}」的語詞`;
+    els.vocabList.innerHTML = "";
+    if (!terms.length) {
+      const empty = document.createElement("p");
+      empty.className = "vocab-empty";
+      empty.textContent = "找不到相關常用語詞";
+      els.vocabList.appendChild(empty);
+      els.vocabStatus.textContent = "0 筆";
+      return;
+    }
+    terms.forEach((term) => {
+      const chip = document.createElement("span");
+      chip.className = "vocab-chip";
+      chip.textContent = term;
+      els.vocabList.appendChild(chip);
+    });
+    els.vocabStatus.textContent = `共 ${terms.length} 筆（已去重複、去數字）`;
+  }
+
+  async function openVocabPanel() {
+    if (!currentChar) return;
+    els.vocabPanel.hidden = false;
+    els.vocabPanelSub.textContent = `含「${currentChar}」的語詞`;
+    els.vocabStatus.textContent = "資料載入中…";
+    els.vocabList.innerHTML = "";
+
+    try {
+      await loadVocabTerms();
+      renderVocabList(findVocabForChar(currentChar), currentChar);
+    } catch (err) {
+      console.error(err);
+      els.vocabStatus.textContent =
+        "載入失敗。請確認語詞試算表為「知道連結的任何人可檢視」。";
+    }
   }
 
   function parseCsv(text) {
@@ -205,7 +324,7 @@
       ? units
           .map(
             (u, i) =>
-              `<option value="${i}">${escapeHtml(u.unit)}（${u.chars.length} 字）</option>`
+              `<option value="${i}">${escapeHtml(u.unit)}（${escapeHtml(u.chars.join(""))} 共${u.chars.length}字）</option>`
           )
           .join("")
       : `<option value="">此冊沒有可玩的單元</option>`;
@@ -405,6 +524,9 @@
     updateHint();
     els.teachProgress.textContent = `${index + 1} / ${queue.length}`;
     els.nextBtn.textContent = index + 1 >= queue.length ? "完成" : "下一字";
+    if (!els.vocabPanel.hidden) {
+      openVocabPanel();
+    }
   }
 
   async function startUnitAt(unitIndex, { requestFs = false } = {}) {
@@ -424,6 +546,8 @@
     stopAutoReveal();
     els.setup.hidden = true;
     els.teach.hidden = false;
+    els.vocabBtn.hidden = false;
+    closeVocabPanel();
 
     showChar(queue[index]);
 
@@ -449,6 +573,7 @@
   }
 
   function celebrateComplete() {
+    closeVocabPanel();
     updateCelebrateActions();
     els.doneOverlay.hidden = false;
     startConfetti(3200);
@@ -462,6 +587,8 @@
     els.setup.hidden = false;
     els.doneOverlay.hidden = true;
     els.answerToast.hidden = true;
+    els.vocabBtn.hidden = true;
+    closeVocabPanel();
     nextBusy = false;
 
     if (document.fullscreenElement) {
@@ -666,6 +793,11 @@
       if (idx < currentUnits.length - 1) startUnitAt(idx + 1);
     });
     els.doneMenuBtn.addEventListener("click", exitTeach);
+    els.vocabBtn.addEventListener("click", () => {
+      if (els.vocabPanel.hidden) openVocabPanel();
+      else closeVocabPanel();
+    });
+    els.vocabCloseBtn.addEventListener("click", closeVocabPanel);
 
     document.addEventListener("fullscreenchange", () => {
       if (!document.fullscreenElement && !els.teach.hidden) {

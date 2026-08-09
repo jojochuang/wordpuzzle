@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="styles.css?v=19" />
+  <link rel="stylesheet" href="styles.css?v=20" />
 </head>
 <body>
   <div class="bg-wash" aria-hidden="true"></div>
@@ -109,8 +109,21 @@
         <button id="done-menu-btn" class="btn btn-ghost celebrate-menu" type="button">回主選單</button>
       </div>
     </div>
+
+    <button id="vocab-btn" class="vocab-fab" type="button" hidden>常用語詞</button>
+    <aside id="vocab-panel" class="vocab-panel" hidden>
+      <header class="vocab-panel-head">
+        <div>
+          <p class="vocab-panel-title">常用語詞</p>
+          <p id="vocab-panel-sub" class="vocab-panel-sub">含「—」的語詞</p>
+        </div>
+        <button id="vocab-close-btn" class="btn btn-ghost" type="button">關閉</button>
+      </header>
+      <p id="vocab-status" class="vocab-status" role="status"></p>
+      <div id="vocab-list" class="vocab-list"></div>
+    </aside>
   </section>
 
-  <script src="app.js?v=12"></script>
+  <script src="app.js?v=14"></script>
 </body>
 </html>
