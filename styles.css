@@ -250,6 +250,69 @@ select:disabled {
   margin-left: auto;
 }
 
+.auto-reveal-group {
+  display: grid;
+  gap: 0.35rem;
+  justify-items: stretch;
+}
+
+.auto-reveal-group .btn {
+  width: 100%;
+}
+
+.speed-stick {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.2rem 0.45rem;
+  border-radius: 999px;
+  background: rgba(28, 36, 48, 0.06);
+  border: 1px solid var(--line);
+  user-select: none;
+}
+
+.speed-end {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--ink-soft);
+  letter-spacing: 0.04em;
+  min-width: 1.1rem;
+  text-align: center;
+}
+
+.speed-stick input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 7.5rem;
+  height: 0.35rem;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #94a3b8, var(--accent));
+  outline: none;
+  cursor: pointer;
+}
+
+.speed-stick input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 1.15rem;
+  height: 1.15rem;
+  border-radius: 50%;
+  background: #fff;
+  border: 2px solid var(--accent-deep);
+  box-shadow: 0 2px 6px rgba(28, 36, 48, 0.25);
+  cursor: grab;
+}
+
+.speed-stick input[type="range"]::-moz-range-thumb {
+  width: 1.15rem;
+  height: 1.15rem;
+  border-radius: 50%;
+  background: #fff;
+  border: 2px solid var(--accent-deep);
+  box-shadow: 0 2px 6px rgba(28, 36, 48, 0.25);
+  cursor: grab;
+}
+
 .chip {
   display: inline-flex;
   align-items: center;
@@ -433,6 +496,31 @@ select:disabled {
   background: linear-gradient(135deg, #fff7ed, #ffe4e6 55%, #fef9c3);
   box-shadow: var(--shadow);
   animation: banner-pop 520ms cubic-bezier(0.2, 1.2, 0.4, 1) both;
+}
+
+.celebrate-panel {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: 1.25rem;
+  justify-items: center;
+  padding: 0 1rem;
+}
+
+.celebrate-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  justify-content: center;
+  animation: rise 420ms ease 180ms both;
+}
+
+.celebrate-actions .btn {
+  min-width: 7.5rem;
+}
+
+.celebrate-menu {
+  animation: rise 420ms ease 280ms both;
 }
 
 .celebrate-text {

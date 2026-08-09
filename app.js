@@ -48,12 +48,17 @@
     hint: document.getElementById("hint"),
     revealBtn: document.getElementById("reveal-btn"),
     autoRevealBtn: document.getElementById("auto-reveal-btn"),
+    revealSpeed: document.getElementById("reveal-speed"),
     nextBtn: document.getElementById("next-btn"),
     exitBtn: document.getElementById("exit-btn"),
     answerToast: document.getElementById("answer-toast"),
     answerChar: document.getElementById("answer-char"),
     doneOverlay: document.getElementById("done-overlay"),
     confettiCanvas: document.getElementById("confetti-canvas"),
+    prevUnitBtn: document.getElementById("prev-unit-btn"),
+    replayUnitBtn: document.getElementById("replay-unit-btn"),
+    nextUnitBtn: document.getElementById("next-unit-btn"),
+    doneMenuBtn: document.getElementById("done-menu-btn"),
   };
 
   /** @type {Record<string, {unit: string, chars: string[]}[]>} */
@@ -402,28 +407,52 @@
     els.nextBtn.textContent = index + 1 >= queue.length ? "完成" : "下一字";
   }
 
-  async function enterTeach() {
-    const unit = currentUnits[Number(els.unitSelect.value)];
+  async function startUnitAt(unitIndex, { requestFs = false } = {}) {
+    const unit = currentUnits[unitIndex];
     if (!unit) return;
+
+    els.unitSelect.value = String(unitIndex);
+    updatePreview();
 
     queue = shuffle(unit.chars);
     index = 0;
+    nextBusy = false;
 
     els.teachUnit.textContent = unit.unit;
     els.doneOverlay.hidden = true;
     stopConfetti();
+    stopAutoReveal();
     els.setup.hidden = true;
     els.teach.hidden = false;
 
     showChar(queue[index]);
 
-    try {
-      if (!document.fullscreenElement && els.teach.requestFullscreen) {
-        await els.teach.requestFullscreen();
+    if (requestFs) {
+      try {
+        if (!document.fullscreenElement && els.teach.requestFullscreen) {
+          await els.teach.requestFullscreen();
+        }
+      } catch {
+        // 瀏覽器可能阻擋全螢幕；仍可正常教學
       }
-    } catch {
-      // 瀏覽器可能阻擋全螢幕；仍可正常教學
     }
+  }
+
+  async function enterTeach() {
+    await startUnitAt(Number(els.unitSelect.value), { requestFs: true });
+  }
+
+  function updateCelebrateActions() {
+    const idx = Number(els.unitSelect.value);
+    els.prevUnitBtn.disabled = idx <= 0;
+    els.nextUnitBtn.disabled = idx >= currentUnits.length - 1;
+  }
+
+  function celebrateComplete() {
+    updateCelebrateActions();
+    els.doneOverlay.hidden = false;
+    startConfetti(3200);
+    nextBusy = false;
   }
 
   async function exitTeach() {
@@ -491,7 +520,7 @@
 
     try {
       if (index + 1 >= queue.length) {
-        await celebrateAndExit();
+        celebrateComplete();
       } else {
         await playCorrect();
         index += 1;
@@ -517,6 +546,14 @@
     }
   }
 
+  /** 速度 1(慢)～10(快) → 間隔毫秒；預設 4 = 1680ms */
+  const REVEAL_DELAYS = [0, 3600, 2800, 2200, 1680, 1400, 1100, 900, 700, 520, 350];
+
+  function getRevealDelay() {
+    const level = Number(els.revealSpeed?.value) || 4;
+    return REVEAL_DELAYS[Math.min(10, Math.max(1, level))] || 1680;
+  }
+
   function autoRevealSequential() {
     stopAutoReveal();
     const pending = AUTO_REVEAL_ORDER.filter((i) => {
@@ -533,7 +570,7 @@
       }
       removeTileByIndex(pending[step]);
       step += 1;
-      autoRevealTimer = setTimeout(tick, 1680);
+      autoRevealTimer = setTimeout(tick, getRevealDelay());
     };
     tick();
   }
@@ -605,17 +642,6 @@
     confettiRaf = requestAnimationFrame(frame);
   }
 
-  function celebrateAndExit() {
-    return new Promise((resolve) => {
-      els.doneOverlay.hidden = false;
-      startConfetti(3200);
-      setTimeout(async () => {
-        await exitTeach();
-        resolve();
-      }, 3400);
-    });
-  }
-
   function bindEvents() {
     els.bookSelect.addEventListener("change", refreshCurrentBook);
     els.unitSelect.addEventListener("change", updatePreview);
@@ -628,6 +654,18 @@
     els.autoRevealBtn.addEventListener("click", autoRevealSequential);
     els.nextBtn.addEventListener("click", handleNextOrFinish);
     els.exitBtn.addEventListener("click", exitTeach);
+    els.prevUnitBtn.addEventListener("click", () => {
+      const idx = Number(els.unitSelect.value);
+      if (idx > 0) startUnitAt(idx - 1);
+    });
+    els.replayUnitBtn.addEventListener("click", () => {
+      startUnitAt(Number(els.unitSelect.value));
+    });
+    els.nextUnitBtn.addEventListener("click", () => {
+      const idx = Number(els.unitSelect.value);
+      if (idx < currentUnits.length - 1) startUnitAt(idx + 1);
+    });
+    els.doneMenuBtn.addEventListener("click", exitTeach);
 
     document.addEventListener("fullscreenchange", () => {
       if (!document.fullscreenElement && !els.teach.hidden) {
