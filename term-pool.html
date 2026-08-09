@@ -1,0 +1,847 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>語詞庫</title>
+  <style>
+    @font-face {
+      font-family: "BpmfZihiKaiStd";
+      src: url("fonts/BpmfZihiKaiStd/BpmfZihiKaiStd-Regular.ttf") format("truetype");
+      font-display: block;
+    }
+    :root {
+      --ink: #1c2430;
+      --muted: #4a5568;
+      --accent: #0f766e;
+      --line: rgba(28, 36, 48, 0.12);
+      --pane-bg: rgba(255, 252, 247, 0.96);
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      height: 100%;
+      overflow: hidden;
+      font-family: "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif;
+      color: var(--ink);
+      background: linear-gradient(160deg, #efe8d8, #f6f1e7 45%, #e7eef0);
+    }
+    .workspace {
+      display: grid;
+      grid-template-columns: minmax(320px, 1fr) minmax(320px, 1fr);
+      height: 100vh;
+      height: 100dvh;
+    }
+    .pane {
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+    }
+    .pane-left {
+      overflow: auto;
+      border-right: 1px solid var(--line);
+      padding: 1.25rem 1.1rem 2rem;
+    }
+    .pane-right {
+      position: relative;
+      background: #0b1220;
+      color: #e8eef7;
+    }
+    .pane-right-head {
+      flex: 0 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+      padding: 0.65rem 0.85rem;
+      border-bottom: 1px solid rgba(255,255,255,0.1);
+      background: rgba(15, 23, 42, 0.95);
+    }
+    .pane-right-head h2 {
+      margin: 0;
+      font-size: 0.95rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+    }
+    .pane-right-head .note {
+      margin: 0;
+      font-size: 0.75rem;
+      color: rgba(232, 238, 247, 0.65);
+    }
+    .pane-right-body {
+      flex: 1;
+      min-height: 0;
+      position: relative;
+    }
+    #geminiFrame {
+      width: 100%;
+      height: 100%;
+      border: 0;
+      background: #111827;
+      display: none; /* Google 禁止嵌入；保留節點以備未來可用 */
+    }
+    .gemini-fallback {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      gap: 0.65rem;
+      padding: 0.85rem;
+      background:
+        radial-gradient(ellipse at 20% 0%, rgba(15,118,110,0.25), transparent 55%),
+        #0f172a;
+    }
+    .gemini-fallback p {
+      margin: 0;
+      font-size: 0.88rem;
+      line-height: 1.5;
+      color: rgba(232, 238, 247, 0.85);
+    }
+    .gemini-fallback textarea {
+      width: 100%;
+      height: 100%;
+      min-height: 120px;
+      resize: none;
+      border: 1px solid rgba(255,255,255,0.14);
+      border-radius: 10px;
+      padding: 0.75rem;
+      font: inherit;
+      font-size: 0.9rem;
+      line-height: 1.45;
+      color: #f8fafc;
+      background: rgba(2, 6, 23, 0.55);
+    }
+    .gemini-fallback .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.45rem;
+    }
+    h1 { margin: 0 0 0.35rem; font-size: 1.55rem; }
+    .sub { margin: 0 0 0.4rem; color: var(--muted); }
+    .hint { margin: 0 0 0.75rem; color: var(--accent); font-size: 0.92rem; }
+    .status { margin: 0 0 0.85rem; min-height: 1.2rem; color: #b45309; font-size: 0.9rem; }
+    .setup {
+      display: grid;
+      gap: 0.4rem;
+      margin-bottom: 0.9rem;
+      padding: 0.75rem;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--pane-bg);
+    }
+    .setup label { font-size: 0.84rem; font-weight: 700; }
+    .setup-row { display: flex; gap: 0.45rem; flex-wrap: wrap; }
+    .setup input {
+      flex: 1;
+      min-width: 180px;
+      padding: 0.5rem 0.65rem;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      font: inherit;
+    }
+    .setup button, .actions button, .term, .pane-right-head button {
+      border: 0;
+      border-radius: 999px;
+      padding: 0.5rem 0.85rem;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .setup button, .actions .primary, .pane-right-head button {
+      background: var(--accent);
+      color: #fff;
+    }
+    .actions .ghost, .pane-right-head button.ghost {
+      background: transparent;
+      border: 1px solid var(--line);
+      color: var(--muted);
+    }
+    .pane-right-head button.ghost {
+      border-color: rgba(255,255,255,0.2);
+      color: rgba(232, 238, 247, 0.85);
+    }
+    .list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.55rem;
+      margin-bottom: 1rem;
+    }
+    .term {
+      font-family: "BpmfZihiKaiStd", "標楷體", serif;
+      font-size: 1.4rem;
+      font-weight: 400;
+      line-height: 1.85;
+      padding: 0.45rem 0.75rem 0.3rem;
+      border-radius: 12px;
+      background: var(--pane-bg);
+      border: 1px solid var(--line);
+      box-shadow: 0 8px 24px rgba(28,36,48,0.08);
+      color: inherit;
+    }
+    .term:hover { border-color: var(--accent); transform: translateY(-1px); }
+    .term.active { background: #d7f0ec; border-color: var(--accent); }
+    .term.saved { box-shadow: inset 0 0 0 2px rgba(15,118,110,0.35); }
+    .empty { color: var(--muted); }
+    .detail {
+      display: none;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: var(--pane-bg);
+      padding: 0.9rem;
+      box-shadow: 0 12px 30px rgba(28,36,48,0.08);
+    }
+    .detail.show { display: grid; gap: 0.7rem; }
+    .detail h2 {
+      margin: 0;
+      font-family: "BpmfZihiKaiStd", "標楷體", serif;
+      font-size: 1.65rem;
+      font-weight: 400;
+      line-height: 1.75;
+    }
+    .source { margin: 0; color: var(--muted); font-size: 0.86rem; }
+    .fields { display: grid; gap: 0.5rem; }
+    .field {
+      display: grid;
+      gap: 0.12rem;
+      padding: 0.5rem 0.6rem;
+      border-radius: 10px;
+      background: rgba(15, 118, 110, 0.06);
+    }
+    .field .label {
+      font-size: 0.76rem;
+      font-weight: 700;
+      color: var(--accent);
+      letter-spacing: 0.04em;
+    }
+    .field .value { font-size: 0.96rem; line-height: 1.5; white-space: pre-wrap; }
+    #geminiPaste {
+      width: 100%;
+      min-height: 84px;
+      padding: 0.65rem;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      font: inherit;
+      resize: vertical;
+    }
+    .actions { display: flex; flex-wrap: wrap; gap: 0.45rem; }
+    @media (max-width: 900px) {
+      html, body { overflow: auto; height: auto; }
+      .workspace {
+        grid-template-columns: 1fr;
+        height: auto;
+        min-height: 100vh;
+      }
+      .pane-left { border-right: 0; }
+      .pane-right { min-height: 55vh; }
+    }
+  </style>
+</head>
+<body>
+  <div class="workspace">
+    <section class="pane pane-left">
+      <h1>語詞庫</h1>
+      <p id="sub" class="sub">共 0 個語詞</p>
+      <p class="hint">左欄選語詞；若尚未建檔，只會開<strong>一個</strong>右欄 Gemini 視窗並送出發問（不會重複開）。</p>
+
+      <section class="setup">
+        <label for="scriptUrl">Apps Script 寫入網址</label>
+        <div class="setup-row">
+          <input id="scriptUrl" type="url" placeholder="https://script.google.com/macros/s/…/exec" />
+          <button id="saveScriptUrl" type="button">儲存網址</button>
+        </div>
+      </section>
+
+      <p id="status" class="status"></p>
+      <div id="list" class="list"></div>
+
+      <section id="detail" class="detail">
+        <h2 id="detailTerm"></h2>
+        <p id="detailSource" class="source"></p>
+        <div id="fields" class="fields"></div>
+        <div id="geminiBox" hidden>
+          <label for="geminiPaste"><strong>貼上 Gemini 回覆</strong>（一行，欄位用 # 分隔）</label>
+          <textarea id="geminiPaste" placeholder="語詞#解釋#解釋英#短句1#短句1英#短句2#短句2英#長句1#長句1英#長句2#長句2英"></textarea>
+          <div class="actions">
+            <button id="askGeminiBtn" class="primary" type="button">請 Gemini 生成</button>
+            <button id="saveSheetBtn" class="primary" type="button">儲存到試算表</button>
+            <button id="copyRowBtn" class="ghost" type="button">複製列（手動貼上）</button>
+          </div>
+        </div>
+      </section>
+    </section>
+
+    <aside class="pane pane-right" id="geminiPane">
+      <div class="pane-right-head">
+        <div>
+          <h2>Gemini</h2>
+          <p class="note">只開一個 · 貼齊右欄</p>
+        </div>
+        <button id="dockGeminiBtn" class="ghost" type="button">對齊右欄</button>
+      </div>
+      <div class="pane-right-body">
+        <iframe id="geminiFrame" title="Gemini" sandbox="allow-scripts allow-same-origin allow-forms allow-popups"></iframe>
+        <div class="gemini-fallback" id="geminiFallback">
+          <p id="geminiGuide">
+            點語詞會直接送出發問（由 Send to Gemini 開啟）。不會先開空白 Gemini。若沒有擴充功能，才開右欄視窗供手動貼上。
+          </p>
+          <textarea id="promptPreview" readonly placeholder="點選左欄語詞後，這裡會顯示要送給 Gemini 的提示詞…"></textarea>
+          <div class="actions">
+            <button id="copyPromptBtn" class="primary" type="button">複製提示詞</button>
+            <button id="openDockedGeminiBtn" class="primary" type="button">在右欄開啟 Gemini</button>
+          </div>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <script>
+    const GEMINI_URL = "https://gemini.google.com/app";
+    const SEND_TO_GEMINI_ID = "gklmoobnblcdiglifjmdilofgndghmml";
+    const STORAGE_KEY = "wordpuzzle-term-pool";
+    const SCRIPT_URL_KEY = "wordpuzzle-vocab-script-url";
+    const DEFAULT_SCRIPT_URL = "";
+    const BANK_SHEET_ID = "12tOoECKZELXUdhrJzTQP3h0DgDmS4oM80DdIvIGLpGM";
+    const BANK_GID = "257311027";
+
+    const FIELD_LABELS = [
+      "語詞", "解釋", "解釋英", "短句1", "短句1英", "短句2", "短句2英",
+      "長句1", "長句1英", "長句2", "長句2英",
+    ];
+
+    let geminiWin = null;
+    let geminiOpenedOnce = false;
+    let askLock = false;
+    let bankMap = new Map();
+    let currentTerm = "";
+    let currentCols = null;
+    let currentPrompt = "";
+    const GEMINI_WIN_NAME = "wordpuzzleGeminiDock";
+
+    const els = {
+      status: document.getElementById("status"),
+      list: document.getElementById("list"),
+      sub: document.getElementById("sub"),
+      detail: document.getElementById("detail"),
+      detailTerm: document.getElementById("detailTerm"),
+      detailSource: document.getElementById("detailSource"),
+      fields: document.getElementById("fields"),
+      geminiBox: document.getElementById("geminiBox"),
+      geminiPaste: document.getElementById("geminiPaste"),
+      askGeminiBtn: document.getElementById("askGeminiBtn"),
+      saveSheetBtn: document.getElementById("saveSheetBtn"),
+      copyRowBtn: document.getElementById("copyRowBtn"),
+      scriptUrl: document.getElementById("scriptUrl"),
+      saveScriptUrl: document.getElementById("saveScriptUrl"),
+      geminiPane: document.getElementById("geminiPane"),
+      promptPreview: document.getElementById("promptPreview"),
+      copyPromptBtn: document.getElementById("copyPromptBtn"),
+      openDockedGeminiBtn: document.getElementById("openDockedGeminiBtn"),
+      dockGeminiBtn: document.getElementById("dockGeminiBtn"),
+      geminiGuide: document.getElementById("geminiGuide"),
+    };
+
+    function plainTerm(term) {
+      return String(term || "")
+        .replace(/[\uFE00-\uFE0F]/g, "")
+        .replace(/[\u{E0100}-\u{E01EF}]/gu, "")
+        .replace(/[\u200B-\u200D\uFEFF]/g, "")
+        .trim();
+    }
+
+    function buildPrompt(term) {
+      const word = plainTerm(term);
+      return (
+        "你是一位中文老師要備課語詞造句練習，不用注音。" +
+        "並且要把查詢結果貼回試算表A~K列，所以欄位都用#隔開。" +
+        "A語詞、B解釋、C解釋英、D短句1、E短句1英、F短句2、G短句2英、H長句1、I長句1英、J長句2、K長句2英。" +
+        `語詞是"${word}"。` +
+        "請只輸出一行，共11個欄位，用#分隔；A欄必須是該語詞本身，不要標題、不要換行。"
+      );
+    }
+
+    function bankKey(term) {
+      return plainTerm(term);
+    }
+
+    async function copyText(text) {
+      try {
+        if (navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(text);
+          return true;
+        }
+      } catch (e) {}
+      try {
+        const ta = document.createElement("textarea");
+        ta.value = text;
+        ta.setAttribute("readonly", "");
+        ta.style.position = "fixed";
+        ta.style.left = "-9999px";
+        document.body.appendChild(ta);
+        ta.select();
+        const ok = document.execCommand("copy");
+        document.body.removeChild(ta);
+        return ok;
+      } catch (e) {
+        return false;
+      }
+    }
+
+    /** 計算右欄在螢幕上的位置，把 Gemini 視窗貼齊 */
+    function geminiDockFeatures() {
+      const rect = els.geminiPane.getBoundingClientRect();
+      const chromeH = Math.max(0, window.outerHeight - window.innerHeight);
+      const chromeW = Math.max(0, window.outerWidth - window.innerWidth);
+      const width = Math.max(360, Math.round(rect.width));
+      const height = Math.max(420, Math.round(rect.height));
+      const left = Math.round(window.screenX + chromeW / 2 + rect.left);
+      const top = Math.round(window.screenY + chromeH + rect.top);
+      return { width, height, left, top };
+    }
+
+    function sleep(ms) {
+      return new Promise((r) => setTimeout(r, ms));
+    }
+
+    /**
+     * 只在「擴充功能沒開成」時，才手動開一個右欄 Gemini（給使用者貼上）。
+     * 不要先開空視窗再送問，否則會變成：一個沒發問 + 一個已發問。
+     */
+    function ensureGeminiDocked() {
+      const dock = geminiDockFeatures();
+      if (geminiWin && !geminiWin.closed) {
+        try {
+          geminiWin.focus();
+          geminiWin.moveTo(dock.left, dock.top);
+          geminiWin.resizeTo(dock.width, dock.height);
+        } catch (e) {}
+        return geminiWin;
+      }
+
+      const features = [
+        "popup=yes",
+        `width=${dock.width}`,
+        `height=${dock.height}`,
+        `left=${dock.left}`,
+        `top=${dock.top}`,
+        "resizable=yes",
+        "scrollbars=yes",
+      ].join(",");
+      geminiWin = window.open(GEMINI_URL, GEMINI_WIN_NAME, features);
+      geminiOpenedOnce = !!geminiWin;
+      return geminiWin;
+    }
+
+    function trySendToGeminiExtension(prompt) {
+      return new Promise((resolve) => {
+        let settled = false;
+        const done = (result) => {
+          if (settled) return;
+          settled = true;
+          resolve(result);
+        };
+        try {
+          if (!window.chrome?.runtime?.sendMessage) {
+            done({ sent: false, noExtension: true });
+            return;
+          }
+          chrome.runtime.sendMessage(
+            SEND_TO_GEMINI_ID,
+            { type: "autofill", prompt, autoSubmit: true },
+            (response) => {
+              if (chrome.runtime.lastError) {
+                done({ sent: false, noExtension: true });
+                return;
+              }
+              done({
+                sent: !!(response && response.success !== false),
+                noExtension: false,
+              });
+            }
+          );
+          // 逾時：擴充功能可能仍在開 Gemini，不要再另開空視窗
+          setTimeout(() => done({ sent: false, noExtension: false }), 2000);
+        } catch (e) {
+          done({ sent: false, noExtension: true });
+        }
+      });
+    }
+
+    function parseCsv(text) {
+      const rows = [];
+      let row = [];
+      let cell = "";
+      let inQuotes = false;
+      for (let i = 0; i < text.length; i++) {
+        const ch = text[i];
+        const next = text[i + 1];
+        if (inQuotes) {
+          if (ch === '"' && next === '"') {
+            cell += '"';
+            i++;
+          } else if (ch === '"') {
+            inQuotes = false;
+          } else {
+            cell += ch;
+          }
+          continue;
+        }
+        if (ch === '"') inQuotes = true;
+        else if (ch === ",") {
+          row.push(cell);
+          cell = "";
+        } else if (ch === "\n") {
+          row.push(cell);
+          rows.push(row);
+          row = [];
+          cell = "";
+        } else if (ch !== "\r") {
+          cell += ch;
+        }
+      }
+      if (cell.length || row.length) {
+        row.push(cell);
+        rows.push(row);
+      }
+      return rows;
+    }
+
+    async function loadBankFromSheet() {
+      const url =
+        `https://docs.google.com/spreadsheets/d/${BANK_SHEET_ID}/gviz/tq?tqx=out:csv&gid=${BANK_GID}`;
+      const res = await fetch(url, { cache: "no-store" });
+      if (!res.ok) throw new Error(`讀取語詞庫失敗 HTTP ${res.status}`);
+      const rows = parseCsv(await res.text());
+      const map = new Map();
+      for (let i = 0; i < rows.length; i++) {
+        const cols = rows[i].slice(0, 11);
+        const term = plainTerm(cols[0] || "");
+        if (!term || term === "語詞") continue;
+        while (cols.length < 11) cols.push("");
+        cols[0] = term;
+        map.set(term, cols.map((c) => String(c || "").trim()));
+      }
+      bankMap = map;
+      markSavedTerms();
+      return map;
+    }
+
+    function loadPoolTerms() {
+      try {
+        const raw = sessionStorage.getItem(STORAGE_KEY);
+        const parsed = raw ? JSON.parse(raw) : [];
+        return Array.isArray(parsed) ? parsed.filter(Boolean) : [];
+      } catch {
+        return [];
+      }
+    }
+
+    function markSavedTerms() {
+      document.querySelectorAll(".term").forEach((btn) => {
+        const key = bankKey(btn.dataset.term || "");
+        btn.classList.toggle("saved", bankMap.has(key));
+      });
+    }
+
+    function renderFields(cols) {
+      els.fields.innerHTML = "";
+      FIELD_LABELS.forEach((label, i) => {
+        if (i === 0) return;
+        const wrap = document.createElement("div");
+        wrap.className = "field";
+        wrap.innerHTML =
+          `<div class="label">${label}</div>` +
+          `<div class="value">${escapeHtml(cols[i] || "（空）")}</div>`;
+        els.fields.appendChild(wrap);
+      });
+    }
+
+    function escapeHtml(s) {
+      return String(s)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
+
+    function showDetail(term, cols, source, needGemini) {
+      currentTerm = term;
+      currentCols = cols ? cols.slice(0, 11) : null;
+      els.detail.classList.add("show");
+      els.detailTerm.textContent = term;
+      els.detailSource.textContent = source;
+      if (cols) renderFields(cols);
+      else els.fields.innerHTML = "";
+      els.geminiBox.hidden = !needGemini;
+      if (needGemini) {
+        els.geminiPaste.value = "";
+        els.geminiPaste.focus();
+      }
+    }
+
+    function parseHashRow(raw, fallbackTerm) {
+      let text = String(raw || "").trim();
+      text = text.replace(/^```[\w]*\n?/m, "").replace(/\n?```$/m, "").trim();
+      const line =
+        text.split(/\n/).map((l) => l.trim()).find((l) => l.includes("#")) ||
+        text.split(/\n/).map((l) => l.trim()).filter(Boolean)[0] ||
+        "";
+      let parts = line.split("#").map((p) => p.trim());
+      if (parts.length === 1 && line.includes("\t")) {
+        parts = line.split("\t").map((p) => p.trim());
+      }
+      while (parts.length < 11) parts.push("");
+      parts = parts.slice(0, 11);
+      if (!plainTerm(parts[0])) parts[0] = plainTerm(fallbackTerm);
+      else parts[0] = plainTerm(parts[0]);
+      return parts;
+    }
+
+    async function askGemini(term) {
+      if (askLock) return;
+      askLock = true;
+      try {
+        currentPrompt = buildPrompt(term);
+        els.promptPreview.value = currentPrompt;
+        const copied = await copyText(currentPrompt);
+
+        // 先讓「Send to Gemini」開「已發問」的那扇；不要先開空的 Gemini
+        const result = await trySendToGeminiExtension(currentPrompt);
+        if (result.sent) {
+          if (geminiWin && !geminiWin.closed) {
+            try {
+              geminiWin.close();
+            } catch (e) {}
+            geminiWin = null;
+          }
+          els.status.textContent =
+            `已向 Gemini 送出「${plainTerm(term)}」。完成後把一行結果貼回左欄儲存。`;
+          return;
+        }
+
+        // 擴充功能存在但回覆慢／未確認：可能已開出發問視窗，不要再開空白的
+        if (!result.noExtension) {
+          els.status.textContent = copied
+            ? `已請擴充功能送出「${plainTerm(term)}」。請看 Gemini；完成後貼回左欄儲存。`
+            : `已請擴充功能處理「${plainTerm(term)}」。`;
+          return;
+        }
+
+        // 沒有擴充功能：才開一個右欄視窗給手動貼上
+        const win = ensureGeminiDocked();
+        if (!win) {
+          els.status.textContent =
+            "無法自動送出，且彈出視窗被擋。請允許彈出式視窗，或安裝 Send to Gemini。";
+          return;
+        }
+        els.status.textContent = copied
+          ? `提示詞已複製。請在右欄 Gemini 貼上（${
+              navigator.platform.includes("Mac") ? "Cmd" : "Ctrl"
+            }+V）送出。`
+          : "無法自動複製，請用右欄「複製提示詞」後到 Gemini 貼上。";
+      } finally {
+        askLock = false;
+      }
+    }
+
+    function getScriptUrl() {
+      return (
+        els.scriptUrl.value ||
+        localStorage.getItem(SCRIPT_URL_KEY) ||
+        DEFAULT_SCRIPT_URL ||
+        ""
+      ).trim();
+    }
+
+    async function saveToSheet(cols) {
+      const scriptUrl = getScriptUrl();
+      if (!scriptUrl) {
+        throw new Error("尚未設定 Apps Script 寫入網址（見頁面上方）");
+      }
+      const payload = JSON.stringify({ action: "append", cols });
+      let data = null;
+      let rawText = "";
+      try {
+        const res = await fetch(scriptUrl, {
+          method: "POST",
+          headers: { "Content-Type": "text/plain;charset=utf-8" },
+          body: payload,
+          redirect: "follow",
+        });
+        rawText = await res.text();
+        if (res.status === 404 || /檔案不存在|does not exist|Sorry/i.test(rawText)) {
+          throw new Error(
+            "Apps Script 網址已失效（404）。請重新「新部署」網頁應用程式，把新網址貼到上方並儲存。"
+          );
+        }
+        try {
+          data = JSON.parse(rawText);
+        } catch {
+          // 有時回轉址 HTML；稍後以試算表是否出現該列驗證
+          data = null;
+        }
+      } catch (err) {
+        if (err && err.message && err.message.includes("Apps Script")) throw err;
+        // 跨網域被擋時無法確認；改以重讀試算表驗證，不樂觀假成功
+      }
+      if (data && data.ok === false) {
+        throw new Error(data.error || "寫入失敗");
+      }
+      await new Promise((r) => setTimeout(r, 1200));
+      try {
+        await loadBankFromSheet();
+      } catch (e) {}
+      const key = cols[0];
+      const saved = bankMap.get(key);
+      const looksSaved = saved && saved.slice(1).some((c) => c);
+      if (!looksSaved) {
+        // 本機暫存方便繼續看，但不宣稱已進試算表
+        bankMap.set(key, cols);
+        markSavedTerms();
+        throw new Error(
+          "沒有寫進試算表。請確認上方 Apps Script 網址有效（瀏覽器開網址?action=ping 應出現 {\"ok\":true}），或改用「複製列」手動貼上。"
+        );
+      }
+      return data || { ok: true };
+    }
+
+    function renderPool(terms) {
+      els.sub.textContent = `共 ${terms.length} 個語詞`;
+      els.list.innerHTML = "";
+      if (!terms.length) {
+        els.list.innerHTML =
+          '<p class="empty">語詞庫是空的，請先在遊戲中點選常用語詞加入。</p>';
+        return;
+      }
+      terms.forEach((term) => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "term";
+        btn.dataset.term = term;
+        btn.textContent = term;
+        if (bankMap.has(bankKey(term))) btn.classList.add("saved");
+        btn.addEventListener("click", async () => {
+          document.querySelectorAll(".term").forEach((b) => b.classList.remove("active"));
+          btn.classList.add("active");
+          const key = bankKey(term);
+          const cached = bankMap.get(key);
+          if (cached && cached.slice(1).some((c) => c)) {
+            showDetail(term, cached, "來源：試算表（已儲存，不需再問 Gemini）", false);
+            els.status.textContent = `已載入「${plainTerm(term)}」的試算表資料。`;
+            currentPrompt = "";
+            els.promptPreview.value = "";
+            return;
+          }
+          showDetail(term, null, "試算表尚無此語詞，請用 Gemini 生成後貼上儲存", true);
+          els.status.textContent = `「${plainTerm(term)}」尚未建檔。`;
+          await askGemini(term);
+        });
+        els.list.appendChild(btn);
+      });
+    }
+
+    els.saveScriptUrl.addEventListener("click", () => {
+      const url = els.scriptUrl.value.trim();
+      localStorage.setItem(SCRIPT_URL_KEY, url);
+      els.status.textContent = url
+        ? "已儲存 Apps Script 寫入網址。"
+        : "已清除寫入網址。";
+    });
+
+    els.askGeminiBtn.addEventListener("click", () => {
+      if (currentTerm) askGemini(currentTerm);
+    });
+
+    els.copyPromptBtn.addEventListener("click", async () => {
+      const text = els.promptPreview.value || currentPrompt;
+      const ok = await copyText(text);
+      els.status.textContent = ok ? "提示詞已複製。" : "複製失敗。";
+    });
+
+    els.openDockedGeminiBtn.addEventListener("click", () => ensureGeminiDocked());
+    els.dockGeminiBtn.addEventListener("click", () => ensureGeminiDocked());
+
+    window.addEventListener("resize", () => {
+      if (geminiWin && !geminiWin.closed) {
+        try {
+          const dock = geminiDockFeatures();
+          geminiWin.moveTo(dock.left, dock.top);
+          geminiWin.resizeTo(dock.width, dock.height);
+        } catch (e) {}
+      }
+    });
+
+    els.copyRowBtn.addEventListener("click", async () => {
+      const cols =
+        currentCols ||
+        parseHashRow(els.geminiPaste.value, currentTerm);
+      const ok = await copyText(cols.join("\t"));
+      els.status.textContent = ok
+        ? "已複製成試算表列（Tab 分隔），可直接貼到試算表。"
+        : "複製失敗。";
+    });
+
+    els.saveSheetBtn.addEventListener("click", async () => {
+      try {
+        const cols = parseHashRow(els.geminiPaste.value, currentTerm);
+        if (!cols[0]) throw new Error("找不到語詞");
+        if (!cols.slice(1).some(Boolean)) {
+          throw new Error("請先貼上 Gemini 回覆（# 分隔）");
+        }
+        els.status.textContent = "寫入試算表中…";
+        await saveToSheet(cols);
+        currentCols = cols;
+        showDetail(currentTerm || cols[0], cols, "來源：剛寫入試算表", false);
+        els.status.textContent = `已儲存「${cols[0]}」到試算表。`;
+      } catch (err) {
+        console.error(err);
+        els.status.textContent = `儲存失敗：${err.message}`;
+      }
+    });
+
+    async function pingScriptUrl(url) {
+      if (!url) return false;
+      try {
+        const res = await fetch(url + (url.includes("?") ? "&" : "?") + "action=ping", {
+          cache: "no-store",
+        });
+        const text = await res.text();
+        if (res.status === 404 || /檔案不存在|does not exist|Sorry/i.test(text)) return false;
+        const data = JSON.parse(text);
+        return !!(data && data.ok);
+      } catch {
+        return false;
+      }
+    }
+
+    async function init() {
+      const saved = localStorage.getItem(SCRIPT_URL_KEY);
+      els.scriptUrl.value = (saved && saved.trim()) || DEFAULT_SCRIPT_URL;
+      const terms = loadPoolTerms();
+      renderPool(terms);
+      els.status.textContent = "正在讀取試算表語詞庫…";
+      try {
+        await loadBankFromSheet();
+        markSavedTerms();
+        els.status.textContent = `試算表已載入 ${bankMap.size} 筆語詞資料。`;
+      } catch (err) {
+        console.error(err);
+        els.status.textContent =
+          "試算表讀取失敗（仍可請 Gemini 生成）。請確認試算表為「知道連結者可檢視/編輯」。";
+      }
+      const scriptUrl = getScriptUrl();
+      if (!scriptUrl) {
+        els.status.textContent +=
+          " ※ 尚未設定 Apps Script 寫入網址，目前無法自動存回試算表（可用「複製列」手動貼）。";
+      } else {
+        const ok = await pingScriptUrl(scriptUrl);
+        if (!ok) {
+          els.status.textContent +=
+            " ※ 寫入網址無效或未部署成功，自動存檔不會進試算表。請重新部署後更新網址。";
+        }
+      }
+    }
+
+    init();
+  </script>
+</body>
+</html>

@@ -62,6 +62,7 @@
     replayUnitBtn: document.getElementById("replay-unit-btn"),
     nextUnitBtn: document.getElementById("next-unit-btn"),
     doneMenuBtn: document.getElementById("done-menu-btn"),
+    termPoolBtn: document.getElementById("term-pool-btn"),
     vocabBtn: document.getElementById("vocab-btn"),
     vocabPanel: document.getElementById("vocab-panel"),
     vocabCloseBtn: document.getElementById("vocab-close-btn"),
@@ -83,6 +84,8 @@
   /** @type {string[] | null} */
   let vocabTerms = null;
   let vocabLoading = null;
+  /** @type {string[]} */
+  let termPool = [];
   const correctAudio = new Audio("sounds/correct.mp3");
   correctAudio.preload = "auto";
   correctAudio.load();
@@ -120,7 +123,7 @@
     );
   }
 
-  /** 與語詞搜尋工具相同：去括號、去數字，並去掉 IVS 後去重 */
+  /** 與語詞搜尋工具相同：去括號、去數字；保留 IVS 以對應注音字形 */
   function tokenizeVocabCell(cellText) {
     return String(cellText || "")
       .replace(/\r/g, "\n")
@@ -130,8 +133,6 @@
           .replace(/\([^)]*\)/g, "")
           .replace(/（[^）]*）/g, "")
           .replace(/[0-9０-９]+/g, "")
-          .replace(/[\uFE00-\uFE0F]/g, "")
-          .replace(/[\u{E0100}-\u{E01EF}]/gu, "")
           .replace(/[\u200B-\u200D\uFEFF]/g, "")
           .trim()
       )
@@ -166,11 +167,81 @@
 
   function findVocabForChar(ch) {
     if (!ch || !vocabTerms) return [];
-    return vocabTerms.filter((term) => term.length >= 2 && term.includes(ch));
+    // 比對時忽略 IVS，顯示時保留 IVS 讓注音字型選對讀音
+    return vocabTerms.filter((term) => {
+      const plain = term
+        .replace(/[\uFE00-\uFE0F]/g, "")
+        .replace(/[\u{E0100}-\u{E01EF}]/gu, "");
+      return plain.length >= 2 && plain.includes(ch);
+    });
   }
 
   function closeVocabPanel() {
     els.vocabPanel.hidden = true;
+  }
+
+  function updateTermPoolBtn() {
+    if (els.termPoolBtn) {
+      els.termPoolBtn.textContent = `語詞庫（${termPool.length}）`;
+      els.termPoolBtn.disabled = termPool.length === 0;
+    }
+  }
+
+  function addToTermPool(term) {
+    if (!term || termPool.includes(term)) return false;
+    termPool.push(term);
+    updateTermPoolBtn();
+    return true;
+  }
+
+  function removeFromTermPool(term) {
+    const idx = termPool.indexOf(term);
+    if (idx === -1) return;
+    termPool.splice(idx, 1);
+    updateTermPoolBtn();
+  }
+
+  function toggleTermPool(term) {
+    if (termPool.includes(term)) removeFromTermPool(term);
+    else addToTermPool(term);
+  }
+
+  function escapeHtml(s) {
+    return String(s)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  let termPoolWin = null;
+
+  function openTermPoolPage() {
+    if (!termPool.length) return;
+    try {
+      sessionStorage.setItem(
+        "wordpuzzle-term-pool",
+        JSON.stringify(termPool)
+      );
+    } catch (err) {
+      console.error(err);
+    }
+
+    // 同一個瀏覽器視窗開新分頁（不帶 features，避免被當成多個彈出視窗）
+    if (termPoolWin && !termPoolWin.closed) {
+      try {
+        termPoolWin.focus();
+        termPoolWin.location.href = "term-pool.html";
+        return;
+      } catch (e) {
+        termPoolWin = null;
+      }
+    }
+
+    termPoolWin = window.open("term-pool.html", "wordpuzzleTermPool");
+    if (!termPoolWin) {
+      window.alert("瀏覽器擋住新分頁，請允許此網站的彈出式視窗後再試。");
+    }
   }
 
   function renderVocabList(terms, ch) {
@@ -184,13 +255,26 @@
       els.vocabStatus.textContent = "0 筆";
       return;
     }
+    const poolSet = new Set(termPool);
     terms.forEach((term) => {
-      const chip = document.createElement("span");
-      chip.className = "vocab-chip";
-      chip.textContent = term;
-      els.vocabList.appendChild(chip);
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "vocab-chip" + (poolSet.has(term) ? " in-pool" : "");
+      btn.textContent = term;
+      btn.title = poolSet.has(term)
+        ? `從語詞庫移除「${term}」`
+        : `加入語詞庫「${term}」`;
+      btn.addEventListener("click", () => {
+        toggleTermPool(term);
+        btn.classList.toggle("in-pool", termPool.includes(term));
+        btn.title = termPool.includes(term)
+          ? `從語詞庫移除「${term}」`
+          : `加入語詞庫「${term}」`;
+        els.vocabStatus.textContent = `共 ${terms.length} 筆 · 語詞庫 ${termPool.length} 個`;
+      });
+      els.vocabList.appendChild(btn);
     });
-    els.vocabStatus.textContent = `共 ${terms.length} 筆（已去重複、去數字）`;
+    els.vocabStatus.textContent = `共 ${terms.length} 筆 · 語詞庫 ${termPool.length} 個（點選加入）`;
   }
 
   async function openVocabPanel() {
@@ -330,14 +414,6 @@
       : `<option value="">此冊沒有可玩的單元</option>`;
     els.unitSelect.disabled = !units.length;
     updatePreview();
-  }
-
-  function escapeHtml(s) {
-    return String(s)
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;");
   }
 
   function updatePreview() {
@@ -570,6 +646,7 @@
     const idx = Number(els.unitSelect.value);
     els.prevUnitBtn.disabled = idx <= 0;
     els.nextUnitBtn.disabled = idx >= currentUnits.length - 1;
+    updateTermPoolBtn();
   }
 
   function celebrateComplete() {
@@ -793,6 +870,7 @@
       if (idx < currentUnits.length - 1) startUnitAt(idx + 1);
     });
     els.doneMenuBtn.addEventListener("click", exitTeach);
+    els.termPoolBtn.addEventListener("click", openTermPoolPage);
     els.vocabBtn.addEventListener("click", () => {
       if (els.vocabPanel.hidden) openVocabPanel();
       else closeVocabPanel();
