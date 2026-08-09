@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="styles.css?v=16" />
+  <link rel="stylesheet" href="styles.css?v=17" />
 </head>
 <body>
   <div class="bg-wash" aria-hidden="true"></div>
@@ -58,7 +58,7 @@
       </div>
       <div class="teach-actions">
         <button id="reveal-btn" class="btn btn-soft" type="button">全部揭開</button>
-        <button id="show-answer-btn" class="btn btn-soft" type="button">顯示答案</button>
+        <button id="auto-reveal-btn" class="btn btn-soft" type="button">自動依序揭開</button>
         <button id="next-btn" class="btn btn-primary" type="button">下一字</button>
         <button id="exit-btn" class="btn btn-ghost" type="button">結束</button>
       </div>
@@ -81,14 +81,13 @@
     </div>
 
     <div id="done-overlay" class="done-overlay" hidden>
-      <div class="done-card">
-        <p class="done-title">本單元完成</p>
-        <p class="done-sub">所有生字都猜過了</p>
-        <button id="done-exit-btn" class="btn btn-primary" type="button">回到選單</button>
+      <canvas id="confetti-canvas" class="confetti-canvas" aria-hidden="true"></canvas>
+      <div class="celebrate-banner" role="status">
+        <p class="celebrate-text">You did it</p>
       </div>
     </div>
   </section>
 
-  <script src="app.js?v=6"></script>
+  <script src="app.js?v=10"></script>
 </body>
 </html>

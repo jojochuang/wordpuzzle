@@ -47,13 +47,13 @@
     tiles: document.getElementById("tiles"),
     hint: document.getElementById("hint"),
     revealBtn: document.getElementById("reveal-btn"),
-    showAnswerBtn: document.getElementById("show-answer-btn"),
+    autoRevealBtn: document.getElementById("auto-reveal-btn"),
     nextBtn: document.getElementById("next-btn"),
     exitBtn: document.getElementById("exit-btn"),
     answerToast: document.getElementById("answer-toast"),
     answerChar: document.getElementById("answer-char"),
     doneOverlay: document.getElementById("done-overlay"),
-    doneExitBtn: document.getElementById("done-exit-btn"),
+    confettiCanvas: document.getElementById("confetti-canvas"),
   };
 
   /** @type {Record<string, {unit: string, chars: string[]}[]>} */
@@ -63,6 +63,24 @@
   let queue = [];
   let index = 0;
   let currentChar = "";
+  let autoRevealTimer = null;
+  let confettiRaf = null;
+  let nextBusy = false;
+  const correctAudio = new Audio("sounds/correct.mp3");
+  correctAudio.preload = "auto";
+  correctAudio.load();
+
+  /**
+   * 4x4 揭開順序：中間 4 片順時針，再外圍 12 片順時針
+   *  0  1  2  3
+   *  4  5  6  7
+   *  8  9 10 11
+   * 12 13 14 15
+   */
+  const AUTO_REVEAL_ORDER = [
+    5, 6, 10, 9, // 中間
+    0, 1, 2, 3, 7, 11, 15, 14, 13, 12, 8, 4, // 外圍
+  ];
 
   function sheetCsvUrl(gid) {
     return `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&gid=${gid}`;
@@ -328,6 +346,7 @@
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = "tile";
+      btn.dataset.index = String(i);
       btn.style.setProperty("--r", String(row));
       btn.style.setProperty("--c", String(col));
       btn.style.zIndex = String(row * GRID + col + 1);
@@ -366,6 +385,7 @@
   }
 
   function showChar(char) {
+    stopAutoReveal();
     currentChar = char;
     const base = els.charLayer.querySelector(".char-base");
     const radical = els.charLayer.querySelector(".char-radical");
@@ -391,6 +411,7 @@
 
     els.teachUnit.textContent = unit.unit;
     els.doneOverlay.hidden = true;
+    stopConfetti();
     els.setup.hidden = true;
     els.teach.hidden = false;
 
@@ -406,10 +427,13 @@
   }
 
   async function exitTeach() {
+    stopAutoReveal();
+    stopConfetti();
     els.teach.hidden = true;
     els.setup.hidden = false;
     els.doneOverlay.hidden = true;
     els.answerToast.hidden = true;
+    nextBusy = false;
 
     if (document.fullscreenElement) {
       try {
@@ -420,25 +444,176 @@
     }
   }
 
-  function nextChar() {
-    if (index + 1 >= queue.length) {
-      els.doneOverlay.hidden = false;
-      return;
+  function playCorrect() {
+    return new Promise((resolve) => {
+      let settled = false;
+      let fallbackTimer = null;
+
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        if (fallbackTimer) clearTimeout(fallbackTimer);
+        correctAudio.removeEventListener("ended", finish);
+        correctAudio.removeEventListener("error", finish);
+        resolve();
+      };
+
+      try {
+        correctAudio.pause();
+        correctAudio.currentTime = 0;
+        correctAudio.addEventListener("ended", finish);
+        correctAudio.addEventListener("error", finish);
+
+        const armFallback = () => {
+          const ms = Number.isFinite(correctAudio.duration) && correctAudio.duration > 0
+            ? Math.ceil(correctAudio.duration * 1000) + 50
+            : 2400;
+          fallbackTimer = setTimeout(finish, ms);
+        };
+
+        if (correctAudio.readyState >= 1) armFallback();
+        else correctAudio.addEventListener("loadedmetadata", armFallback, { once: true });
+
+        const p = correctAudio.play();
+        if (p && typeof p.then === "function") {
+          p.catch(() => finish());
+        }
+      } catch {
+        finish();
+      }
+    });
+  }
+
+  async function handleNextOrFinish() {
+    if (nextBusy || els.teach.hidden) return;
+    nextBusy = true;
+    stopAutoReveal();
+
+    try {
+      if (index + 1 >= queue.length) {
+        await celebrateAndExit();
+      } else {
+        await playCorrect();
+        index += 1;
+        showChar(queue[index]);
+      }
+    } finally {
+      nextBusy = false;
     }
-    index += 1;
-    showChar(queue[index]);
+  }
+
+  function stopAutoReveal() {
+    if (autoRevealTimer) {
+      clearTimeout(autoRevealTimer);
+      autoRevealTimer = null;
+    }
+  }
+
+  function removeTileByIndex(i) {
+    const tile = els.tiles.querySelector(`.tile[data-index="${i}"]`);
+    if (tile && !tile.classList.contains("gone")) {
+      tile.classList.add("gone");
+      updateHint();
+    }
+  }
+
+  function autoRevealSequential() {
+    stopAutoReveal();
+    const pending = AUTO_REVEAL_ORDER.filter((i) => {
+      const tile = els.tiles.querySelector(`.tile[data-index="${i}"]`);
+      return tile && !tile.classList.contains("gone");
+    });
+    if (!pending.length) return;
+
+    let step = 0;
+    const tick = () => {
+      if (step >= pending.length) {
+        autoRevealTimer = null;
+        return;
+      }
+      removeTileByIndex(pending[step]);
+      step += 1;
+      autoRevealTimer = setTimeout(tick, 1680);
+    };
+    tick();
   }
 
   function revealAll() {
+    stopAutoReveal();
     els.tiles.querySelectorAll(".tile").forEach((tile) => {
       tile.classList.add("gone");
     });
     updateHint();
   }
 
-  function showAnswer() {
-    els.answerChar.textContent = currentChar;
-    els.answerToast.hidden = false;
+  function stopConfetti() {
+    if (confettiRaf) {
+      cancelAnimationFrame(confettiRaf);
+      confettiRaf = null;
+    }
+    const ctx = els.confettiCanvas?.getContext?.("2d");
+    if (ctx && els.confettiCanvas) {
+      ctx.clearRect(0, 0, els.confettiCanvas.width, els.confettiCanvas.height);
+    }
+  }
+
+  function startConfetti(durationMs = 2800) {
+    const canvas = els.confettiCanvas;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    const colors = ["#FF0000", "#00FF00", "#0000FF", "#FFFF00", "#E0218A", "#FF5F1F", "#00FFFF", "#C6A68F"];
+    const resize = () => {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    };
+    resize();
+
+    const pieces = Array.from({ length: 160 }, () => ({
+      x: Math.random() * canvas.width,
+      y: Math.random() * canvas.height * -0.4,
+      w: 6 + Math.random() * 8,
+      h: 8 + Math.random() * 12,
+      vx: -3 + Math.random() * 6,
+      vy: 2 + Math.random() * 5,
+      rot: Math.random() * Math.PI,
+      vr: -0.2 + Math.random() * 0.4,
+      color: colors[Math.floor(Math.random() * colors.length)],
+    }));
+
+    const start = performance.now();
+    const frame = (now) => {
+      const t = now - start;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      pieces.forEach((p) => {
+        p.x += p.vx;
+        p.y += p.vy;
+        p.vy += 0.08;
+        p.rot += p.vr;
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.rotate(p.rot);
+        ctx.fillStyle = p.color;
+        ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
+        ctx.restore();
+      });
+      if (t < durationMs) {
+        confettiRaf = requestAnimationFrame(frame);
+      } else {
+        confettiRaf = null;
+      }
+    };
+    confettiRaf = requestAnimationFrame(frame);
+  }
+
+  function celebrateAndExit() {
+    return new Promise((resolve) => {
+      els.doneOverlay.hidden = false;
+      startConfetti(3200);
+      setTimeout(async () => {
+        await exitTeach();
+        resolve();
+      }, 3400);
+    });
   }
 
   function bindEvents() {
@@ -450,10 +625,9 @@
       await refreshCurrentBook();
     });
     els.revealBtn.addEventListener("click", revealAll);
-    els.showAnswerBtn.addEventListener("click", showAnswer);
-    els.nextBtn.addEventListener("click", nextChar);
+    els.autoRevealBtn.addEventListener("click", autoRevealSequential);
+    els.nextBtn.addEventListener("click", handleNextOrFinish);
     els.exitBtn.addEventListener("click", exitTeach);
-    els.doneExitBtn.addEventListener("click", exitTeach);
 
     document.addEventListener("fullscreenchange", () => {
       if (!document.fullscreenElement && !els.teach.hidden) {
@@ -473,9 +647,9 @@
           pick.click();
         }
       } else if (e.key === "n" || e.key === "N" || e.key === "ArrowRight") {
-        nextChar();
+        handleNextOrFinish();
       } else if (e.key === "a" || e.key === "A") {
-        showAnswer();
+        autoRevealSequential();
       } else if (e.key === "r" || e.key === "R") {
         revealAll();
       }
