@@ -3,6 +3,9 @@
   const VOCAB_SHEET_ID = "17bjNhzlQH43hE3k27ZzRVLZYX3Vt1vEqQXSncy2ADI4";
   const VOCAB_GID = "1950889734";
   const VOCAB_RANGE = "A2:CZ2882";
+  /** 語詞造句庫（已有解釋／句子的語詞） */
+  const BANK_SHEET_ID = "12tOoECKZELXUdhrJzTQP3h0DgDmS4oM80DdIvIGLpGM";
+  const BANK_GID = "257311027";
 
   /** 試算表分頁：A 欄單元、B 欄生字 */
   const BOOKS = [
@@ -86,8 +89,16 @@
   /** @type {string[] | null} */
   let vocabTerms = null;
   let vocabLoading = null;
+  /** @type {Set<string> | null} 已有造句資料的語詞（比對用，已去 IVS） */
+  let bankPlainSet = null;
+  let bankLoading = null;
   /** @type {string[]} */
   let termPool = [];
+  try {
+    const raw = localStorage.getItem("wordpuzzle-term-pool");
+    const parsed = raw ? JSON.parse(raw) : [];
+    if (Array.isArray(parsed)) termPool = parsed.filter(Boolean);
+  } catch (e) {}
   const correctAudio = new Audio("sounds/correct.mp3");
   correctAudio.preload = "auto";
   correctAudio.load();
@@ -182,6 +193,17 @@
     els.vocabPanel.hidden = true;
   }
 
+  const TERM_POOL_KEY = "wordpuzzle-term-pool";
+
+  function persistTermPool() {
+    try {
+      localStorage.setItem(TERM_POOL_KEY, JSON.stringify(termPool));
+      sessionStorage.setItem(TERM_POOL_KEY, JSON.stringify(termPool));
+    } catch (err) {
+      console.error(err);
+    }
+  }
+
   function updateTermPoolBtn() {
     const label = `語詞庫（${termPool.length}）`;
     const empty = termPool.length === 0;
@@ -198,6 +220,7 @@
   function addToTermPool(term) {
     if (!term || termPool.includes(term)) return false;
     termPool.push(term);
+    persistTermPool();
     updateTermPoolBtn();
     return true;
   }
@@ -206,6 +229,7 @@
     const idx = termPool.indexOf(term);
     if (idx === -1) return;
     termPool.splice(idx, 1);
+    persistTermPool();
     updateTermPoolBtn();
   }
 
@@ -226,30 +250,67 @@
 
   function openTermPoolPage() {
     if (!termPool.length) return;
-    try {
-      sessionStorage.setItem(
-        "wordpuzzle-term-pool",
-        JSON.stringify(termPool)
-      );
-    } catch (err) {
-      console.error(err);
-    }
+    persistTermPool();
 
-    // 同一個瀏覽器視窗開新分頁（不帶 features，避免被當成多個彈出視窗）
+    const url = `term-pool.html?t=${Date.now()}`;
+    // 同一個瀏覽器視窗開新分頁；具名視窗重用時靠 localStorage + 重新載入
     if (termPoolWin && !termPoolWin.closed) {
       try {
         termPoolWin.focus();
-        termPoolWin.location.href = "term-pool.html";
+        termPoolWin.location.href = url;
         return;
       } catch (e) {
         termPoolWin = null;
       }
     }
 
-    termPoolWin = window.open("term-pool.html", "wordpuzzleTermPool");
+    termPoolWin = window.open(url, "wordpuzzleTermPool");
     if (!termPoolWin) {
       window.alert("瀏覽器擋住新分頁，請允許此網站的彈出式視窗後再試。");
     }
+  }
+
+  function plainTermKey(term) {
+    return String(term || "")
+      .replace(/[\uFE00-\uFE0F]/g, "")
+      .replace(/[\u{E0100}-\u{E01EF}]/gu, "")
+      .replace(/[\u200B-\u200D\uFEFF]/g, "")
+      .trim();
+  }
+
+  function bankGvizUrl(tq) {
+    const base = `https://docs.google.com/spreadsheets/d/${BANK_SHEET_ID}/gviz/tq?tqx=out:csv&gid=${BANK_GID}`;
+    return tq ? `${base}&tq=${encodeURIComponent(tq)}` : base;
+  }
+
+  async function loadBankPlainSet() {
+    if (bankPlainSet) return bankPlainSet;
+    if (bankLoading) return bankLoading;
+
+    bankLoading = (async () => {
+      // 遊戲頁只需判斷「是否已建檔」，只讀 A 欄
+      const res = await fetch(bankGvizUrl("select A"), { cache: "no-store" });
+      if (!res.ok) throw new Error(`bank HTTP ${res.status}`);
+      const rows = parseCsv(await res.text());
+      const set = new Set();
+      for (const row of rows) {
+        const key = plainTermKey(row[0] || "");
+        if (!key || key === "語詞") continue;
+        set.add(key);
+      }
+      bankPlainSet = set;
+      return bankPlainSet;
+    })();
+
+    try {
+      return await bankLoading;
+    } finally {
+      bankLoading = null;
+    }
+  }
+
+  function termHasBankData(term) {
+    return !!(bankPlainSet && bankPlainSet.has(plainTermKey(term)));
   }
 
   function renderVocabList(terms, ch) {
@@ -264,25 +325,41 @@
       return;
     }
     const poolSet = new Set(termPool);
+    let bankCount = 0;
     terms.forEach((term) => {
       const btn = document.createElement("button");
       btn.type = "button";
-      btn.className = "vocab-chip" + (poolSet.has(term) ? " in-pool" : "");
+      const inPool = poolSet.has(term);
+      const hasBank = termHasBankData(term);
+      if (hasBank) bankCount += 1;
+      btn.className =
+        "vocab-chip" +
+        (inPool ? " in-pool" : "") +
+        (hasBank ? " has-bank" : "");
       btn.textContent = term;
-      btn.title = poolSet.has(term)
-        ? `從語詞庫移除「${term}」`
-        : `加入語詞庫「${term}」`;
+      btn.title = hasBank
+        ? inPool
+          ? `已有造句 · 從語詞庫移除「${term}」`
+          : `已有造句 · 加入語詞庫「${term}」`
+        : inPool
+          ? `從語詞庫移除「${term}」`
+          : `加入語詞庫「${term}」`;
       btn.addEventListener("click", () => {
         toggleTermPool(term);
         btn.classList.toggle("in-pool", termPool.includes(term));
-        btn.title = termPool.includes(term)
-          ? `從語詞庫移除「${term}」`
-          : `加入語詞庫「${term}」`;
-        els.vocabStatus.textContent = `共 ${terms.length} 筆 · 語詞庫 ${termPool.length} 個`;
+        const nowInPool = termPool.includes(term);
+        btn.title = hasBank
+          ? nowInPool
+            ? `已有造句 · 從語詞庫移除「${term}」`
+            : `已有造句 · 加入語詞庫「${term}」`
+          : nowInPool
+            ? `從語詞庫移除「${term}」`
+            : `加入語詞庫「${term}」`;
+        els.vocabStatus.textContent = `共 ${terms.length} 筆 · 語詞庫 ${termPool.length} 個 · 已造句 ${bankCount} 個`;
       });
       els.vocabList.appendChild(btn);
     });
-    els.vocabStatus.textContent = `共 ${terms.length} 筆 · 語詞庫 ${termPool.length} 個（點選加入）`;
+    els.vocabStatus.textContent = `共 ${terms.length} 筆 · 語詞庫 ${termPool.length} 個 · 已造句 ${bankCount} 個（點選加入）`;
   }
 
   async function openVocabPanel() {
@@ -293,7 +370,7 @@
     els.vocabList.innerHTML = "";
 
     try {
-      await loadVocabTerms();
+      await Promise.all([loadVocabTerms(), loadBankPlainSet().catch(() => null)]);
       renderVocabList(findVocabForChar(currentChar), currentChar);
     } catch (err) {
       console.error(err);
@@ -919,6 +996,7 @@
 
   async function init() {
     bindEvents();
+    updateTermPoolBtn();
     fillBookSelect();
     await refreshCurrentBook();
   }

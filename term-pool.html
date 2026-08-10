@@ -117,6 +117,11 @@
       letter-spacing: 0.04em;
     }
     .field .value { font-size: 0.96rem; line-height: 1.5; white-space: pre-wrap; }
+    .field .value-zh {
+      font-family: "BpmfZihiKaiStd", "標楷體", serif;
+      line-height: 1.95;
+      font-size: 1.15rem;
+    }
     .tts-btn {
       flex: 0 0 auto;
       border: 1px solid var(--line);
@@ -153,9 +158,9 @@
     }
     .speak-stage-card {
       max-width: min(920px, 94vw);
-      max-height: min(80vh, 720px);
+      max-height: min(85vh, 780px);
       overflow: auto;
-      padding: 1.6rem 1.8rem;
+      padding: 2.2rem 1.8rem 1.6rem;
       border-radius: 18px;
       background: rgba(255, 252, 247, 0.98);
       border: 1px solid var(--line);
@@ -167,8 +172,17 @@
       font-family: "BpmfZihiKaiStd", "標楷體", serif;
       font-size: clamp(2.4rem, 7vw, 4.6rem);
       font-weight: 400;
-      line-height: 1.55;
-      letter-spacing: 0.04em;
+      line-height: 2.45;
+      letter-spacing: 0.06em;
+      padding-top: 2.6rem; /* 留給注音，避免被裁切 */
+    }
+    .speak-stage-card.zh .zh-cluster {
+      font-family: inherit;
+      font-size: inherit;
+      line-height: inherit;
+      display: inline-block;
+      padding: 0.15em 0.02em;
+      vertical-align: baseline;
     }
     .speak-stage-card.en {
       font-family: "Noto Sans TC", "PingFang TC", "Helvetica Neue", sans-serif;
@@ -190,13 +204,19 @@
       resize: vertical;
     }
     .actions { display: flex; flex-wrap: wrap; gap: 0.45rem; }
+    .gemini-help {
+      margin: 0.35rem 0 0;
+      color: var(--muted);
+      font-size: 0.88rem;
+      line-height: 1.45;
+    }
   </style>
 </head>
 <body>
   <main>
       <h1>語詞庫</h1>
       <p id="sub" class="sub">共 0 個語詞</p>
-      <p class="hint">點選語詞：已建檔則顯示試算表內容；尚未建檔則請 Gemini 生成後貼回儲存。</p>
+      <p class="hint">點選語詞：已建檔則顯示試算表內容；尚未建檔則複製提示詞給 Gemini，貼回後儲存。</p>
 
       <p id="status" class="status"></p>
       <div id="list" class="list"></div>
@@ -212,10 +232,14 @@
           <label for="geminiPaste"><strong>貼上 Gemini 回覆</strong>（一行，欄位用 # 分隔）</label>
           <textarea id="geminiPaste" placeholder="語詞#解釋#解釋英#短句1#短句1英#短句2#短句2英#長句1#長句1英#長句2#長句2英"></textarea>
           <div class="actions">
-            <button id="askGeminiBtn" class="primary" type="button">請 Gemini 生成</button>
-            <button id="saveSheetBtn" class="primary" type="button">儲存到試算表</button>
-            <button id="copyRowBtn" class="ghost" type="button">複製列（手動貼上）</button>
+            <button id="askGeminiBtn" class="primary" type="button">複製給 Gemini</button>
+            <button id="toneozBtn" class="ghost" type="button">去澳聲通校正注音</button>
+            <button id="saveSheetBtn" class="primary" type="button">覆蓋回試算表</button>
           </div>
+          <p class="gemini-help">
+            若要修改句子，可貼上新內容後按「覆蓋回試算表」更新原資料。
+            若跳出的 Gemini 視窗裡沒有指令，請按「複製給 Gemini」，再到 Gemini 視窗貼上送出。
+          </p>
         </div>
       </section>
   </main>
@@ -229,7 +253,7 @@
     const SEND_TO_GEMINI_ID = "gklmoobnblcdiglifjmdilofgndghmml";
     const STORAGE_KEY = "wordpuzzle-term-pool";
     const SCRIPT_URL =
-      "https://script.google.com/macros/s/AKfycbwHVQR9YqERjeG3Fg3MdOH8OHKGXLIGR3V9bV204P2IFr6YwPV5g9rb8MRS1VzobGV0/exec";
+      "https://script.google.com/macros/s/AKfycbwyMiNBZn6HPuxdHSHKFHfGAQrLeuODLEQgupD3cD5rUXu-IczsZ-KSHxv9P5mao8BdTQ/exec";
     const BANK_SHEET_ID = "12tOoECKZELXUdhrJzTQP3h0DgDmS4oM80DdIvIGLpGM";
     const BANK_GID = "257311027";
 
@@ -240,7 +264,10 @@
 
     let geminiWin = null;
     let askLock = false;
-    let bankMap = new Map();
+    /** plainKey → 試算表 A 欄原文（僅索引，不含 B–K） */
+    let bankIndex = new Map();
+    /** plainKey → 完整 A–K（點選後才載入） */
+    let bankDetails = new Map();
     let currentTerm = "";
     let currentCols = null;
     let currentPrompt = "";
@@ -258,8 +285,8 @@
       geminiBox: document.getElementById("geminiBox"),
       geminiPaste: document.getElementById("geminiPaste"),
       askGeminiBtn: document.getElementById("askGeminiBtn"),
+      toneozBtn: document.getElementById("toneozBtn"),
       saveSheetBtn: document.getElementById("saveSheetBtn"),
-      copyRowBtn: document.getElementById("copyRowBtn"),
       speakStage: document.getElementById("speakStage"),
       speakStageCard: document.getElementById("speakStageCard"),
     };
@@ -396,41 +423,89 @@
       return rows;
     }
 
-    async function loadBankFromSheet() {
-      const url =
-        `https://docs.google.com/spreadsheets/d/${BANK_SHEET_ID}/gviz/tq?tqx=out:csv&gid=${BANK_GID}`;
-      const res = await fetch(url, { cache: "no-store" });
-      if (!res.ok) throw new Error(`讀取語詞庫失敗 HTTP ${res.status}`);
-      const rows = parseCsv(await res.text());
-      const map = new Map();
-      for (let i = 0; i < rows.length; i++) {
-        const cols = rows[i].slice(0, 11);
-        const term = plainTerm(cols[0] || "");
-        if (!term || term === "語詞") continue;
-        while (cols.length < 11) cols.push("");
-        cols[0] = term;
-        map.set(term, cols.map((c) => String(c || "").trim()));
-      }
-      bankMap = map;
-      markSavedTerms();
-      return map;
+    function gvizCsvUrl(tq) {
+      const base = `https://docs.google.com/spreadsheets/d/${BANK_SHEET_ID}/gviz/tq?tqx=out:csv&gid=${BANK_GID}`;
+      return tq ? `${base}&tq=${encodeURIComponent(tq)}` : base;
     }
 
-    function loadPoolTerms() {
-      try {
-        const raw = sessionStorage.getItem(STORAGE_KEY);
-        const parsed = raw ? JSON.parse(raw) : [];
-        return Array.isArray(parsed) ? parsed.filter(Boolean) : [];
-      } catch {
-        return [];
+    function escapeGvizString(s) {
+      return String(s || "").replace(/\\/g, "\\\\").replace(/'/g, "''");
+    }
+
+    function normalizeBankCols(row, rawFallback) {
+      const cols = (row || []).slice(0, 11).map((c) => String(c || "").trim());
+      while (cols.length < 11) cols.push("");
+      const rawTerm = String(cols[0] || rawFallback || "").trim();
+      cols[0] = rawTerm;
+      return cols;
+    }
+
+    /** 只讀 A 欄，建立「哪些語詞已建檔」索引 */
+    async function loadBankIndexFromSheet() {
+      const res = await fetch(gvizCsvUrl("select A"), { cache: "no-store" });
+      if (!res.ok) throw new Error(`讀取語詞庫失敗 HTTP ${res.status}`);
+      const rows = parseCsv(await res.text());
+      const index = new Map();
+      for (let i = 0; i < rows.length; i++) {
+        const rawTerm = String((rows[i] && rows[i][0]) || "").trim();
+        const key = plainTerm(rawTerm);
+        if (!key || key === "語詞") continue;
+        index.set(key, rawTerm);
       }
+      bankIndex = index;
+      // 清掉已不在表上的快取
+      for (const k of [...bankDetails.keys()]) {
+        if (!bankIndex.has(k)) bankDetails.delete(k);
+      }
+      markSavedTerms();
+      return index;
+    }
+
+    /** 依 A 欄原文載入該列 A–K */
+    async function loadBankDetailFromSheet(rawTerm) {
+      const term = String(rawTerm || "").trim();
+      if (!term) return null;
+      const tq = `select A,B,C,D,E,F,G,H,I,J,K where A = '${escapeGvizString(term)}'`;
+      const res = await fetch(gvizCsvUrl(tq), { cache: "no-store" });
+      if (!res.ok) throw new Error(`讀取語詞列失敗 HTTP ${res.status}`);
+      const rows = parseCsv(await res.text());
+      const want = plainTerm(term);
+      for (let i = 0; i < rows.length; i++) {
+        const cols = normalizeBankCols(rows[i], term);
+        const key = plainTerm(cols[0]);
+        if (!key || key === "語詞") continue;
+        if (key === want) return cols;
+      }
+      return null;
+    }
+
+    function rememberBankRow(cols) {
+      const row = normalizeBankCols(cols);
+      const key = bankKey(row[0]);
+      if (!key) return key;
+      bankIndex.set(key, row[0]);
+      bankDetails.set(key, row);
+      markSavedTerms();
+      return key;
     }
 
     function markSavedTerms() {
       document.querySelectorAll(".term").forEach((btn) => {
         const key = bankKey(btn.dataset.term || "");
-        btn.classList.toggle("saved", bankMap.has(key));
+        btn.classList.toggle("saved", bankIndex.has(key));
       });
+    }
+
+    function loadPoolTerms() {
+      try {
+        const raw =
+          localStorage.getItem(STORAGE_KEY) ||
+          sessionStorage.getItem(STORAGE_KEY);
+        const parsed = raw ? JSON.parse(raw) : [];
+        return Array.isArray(parsed) ? parsed.filter(Boolean) : [];
+      } catch {
+        return [];
+      }
     }
 
     function pickVoice() {
@@ -457,17 +532,13 @@
     let speakHideTimer = null;
     let speakToken = 0;
 
-    function showSpeakStage(text, isEnglish) {
-      const t = String(text || "").trim();
-      if (!t) return;
-      els.speakStage.hidden = false;
-      els.speakStageCard.textContent = t;
-      els.speakStageCard.classList.toggle("zh", !isEnglish);
-      els.speakStageCard.classList.toggle("en", !!isEnglish);
-      // 下一幀再加 class，讓 transition 生效
-      requestAnimationFrame(() => {
-        els.speakStage.classList.add("show");
-      });
+    function stripIvs(text) {
+      return String(text || "")
+        .replace(/[\uFE00-\uFE0F]/g, "")
+        .replace(/[\u{E0100}-\u{E01EF}]/gu, "")
+        .replace(/[\u200B-\u200D\uFEFF]/g, "")
+        .replace(/（空）/g, "")
+        .trim();
     }
 
     function hideSpeakStage() {
@@ -479,19 +550,19 @@
       }, 200);
     }
 
-    /** 與 dictation_exam 相同：美佳 / zh-TW，rate 0.8；同時放大顯示內容 */
+    /** 美佳朗讀；放大畫面保留多音字 IVS */
     function speak(text, isEnglish) {
       if (!("speechSynthesis" in window)) return;
-      let t = String(text || "")
-        .replace(/[\uFE00-\uFE0F]/g, "")
-        .replace(/[\u{E0100}-\u{E01EF}]/gu, "")
+      const display = String(text || "")
         .replace(/（空）/g, "")
+        .replace(/[\u200B-\u200D\uFEFF]/g, "")
         .trim();
-      if (!t) return;
+      const forSpeech = isEnglish ? display : stripIvs(display);
+      if (!display || (!isEnglish && !forSpeech)) return;
       const token = ++speakToken;
       window.speechSynthesis.cancel();
-      showSpeakStage(t, !!isEnglish);
-      const u = new SpeechSynthesisUtterance(t);
+      showSpeakStage(display, !!isEnglish);
+      const u = new SpeechSynthesisUtterance(forSpeech || display);
       u.lang = isEnglish ? "en-US" : "zh-TW";
       u.rate = 0.8;
       const v = pickVoice();
@@ -550,7 +621,8 @@
         );
 
         const val = document.createElement("div");
-        val.className = "value";
+        val.className = "value" + (isEnglishField(label) ? "" : " value-zh");
+        // 如實顯示試算表字串（含 IVS）
         val.textContent = text || "（空）";
 
         wrap.appendChild(head);
@@ -559,24 +631,50 @@
       });
     }
 
+    function showSpeakStage(text, isEnglish) {
+      // 原樣顯示（含 IVS），不改字形
+      const t = String(text || "")
+        .replace(/（空）/g, "")
+        .replace(/[\u200B-\u200D\uFEFF]/g, "")
+        .trim();
+      if (!t) return;
+      els.speakStage.hidden = false;
+      els.speakStageCard.classList.toggle("zh", !isEnglish);
+      els.speakStageCard.classList.toggle("en", !!isEnglish);
+      els.speakStageCard.textContent = t;
+      requestAnimationFrame(() => {
+        els.speakStage.classList.add("show");
+      });
+    }
+
     function showDetail(term, cols, source, needGemini) {
       currentTerm = term;
       currentCols = cols ? cols.slice(0, 11) : null;
       els.detail.classList.add("show");
-      els.detailTerm.textContent = term;
+      // 已存檔：以試算表 A 欄為準；尚未存檔：用語詞庫選取的字
+      const displayTerm =
+        cols && String(cols[0] || "").trim()
+          ? String(cols[0]).trim()
+          : term;
+      els.detailTerm.textContent = displayTerm;
       els.detailSource.textContent = source;
 
-      const speakTerm = plainTerm(cols && cols[0] ? cols[0] : term);
-      els.detailTermSpeak.hidden = !speakTerm;
-      els.detailTermSpeak.disabled = !speakTerm;
-      els.detailTermSpeak.onclick = () => speak(speakTerm, false);
+      els.detailTermSpeak.hidden = !stripIvs(displayTerm);
+      els.detailTermSpeak.disabled = !stripIvs(displayTerm);
+      els.detailTermSpeak.onclick = () => speak(displayTerm, false);
 
       if (cols) renderFields(cols);
       else els.fields.innerHTML = "";
-      els.geminiBox.hidden = !needGemini;
-      if (needGemini) {
+
+      // 無論是否已有資料，都顯示操作區，方便修改後覆蓋存檔
+      els.geminiBox.hidden = false;
+      if (cols && cols.slice(1).some((c) => String(c || "").trim())) {
+        const row = cols.slice(0, 11);
+        while (row.length < 11) row.push("");
+        els.geminiPaste.value = row.join("#");
+      } else {
         els.geminiPaste.value = "";
-        els.geminiPaste.focus();
+        if (needGemini) els.geminiPaste.focus();
       }
     }
 
@@ -598,8 +696,10 @@
       }
       while (parts.length < 11) parts.push("");
       parts = parts.slice(0, 11);
-      if (!plainTerm(parts[0])) parts[0] = plainTerm(fallbackTerm);
-      else parts[0] = plainTerm(parts[0]);
+      // 保留貼上內容的 IVS；缺 A 欄才用選取語詞（同樣保留原字形）
+      if (!String(parts[0] || "").trim()) {
+        parts[0] = String(fallbackTerm || "").trim();
+      }
       return parts;
     }
 
@@ -649,6 +749,33 @@
       }
     }
 
+    function parseAppsScriptJson(text) {
+      const raw = String(text || "").trim();
+      if (!raw) return null;
+      try {
+        return JSON.parse(raw);
+      } catch (e) {}
+      // 有時夾在 HTML／轉址頁裡，擷取第一個含 "ok" 的 JSON 物件
+      const start = raw.indexOf('{"ok"');
+      if (start === -1) return null;
+      let depth = 0;
+      for (let i = start; i < raw.length; i++) {
+        const ch = raw[i];
+        if (ch === "{") depth += 1;
+        else if (ch === "}") {
+          depth -= 1;
+          if (depth === 0) {
+            try {
+              return JSON.parse(raw.slice(start, i + 1));
+            } catch (e) {
+              return null;
+            }
+          }
+        }
+      }
+      return null;
+    }
+
     async function saveToSheet(cols) {
       const payload = JSON.stringify({ action: "append", cols });
       let data = null;
@@ -666,34 +793,52 @@
             "Apps Script 網址已失效（404）。請重新部署後更新程式內建網址。"
           );
         }
-        try {
-          data = JSON.parse(rawText);
-        } catch {
-          // 有時回轉址 HTML；稍後以試算表是否出現該列驗證
-          data = null;
-        }
+        data = parseAppsScriptJson(rawText);
       } catch (err) {
         if (err && err.message && err.message.includes("Apps Script")) throw err;
-        // 跨網域被擋時無法確認；改以重讀試算表驗證，不樂觀假成功
       }
       if (data && data.ok === false) {
-        throw new Error(data.error || "寫入失敗");
-      }
-      await new Promise((r) => setTimeout(r, 1200));
-      try {
-        await loadBankFromSheet();
-      } catch (e) {}
-      const key = cols[0];
-      const saved = bankMap.get(key);
-      const looksSaved = saved && saved.slice(1).some((c) => c);
-      if (!looksSaved) {
-        // 本機暫存方便繼續看，但不宣稱已進試算表
-        bankMap.set(key, cols);
-        markSavedTerms();
         throw new Error(
-          "沒有寫進試算表。請稍後再試，或改用「複製列」手動貼上。"
+          `${data.error || "寫入失敗"}（腳本 ver ${
+            data.ver != null ? data.ver : "？"
+          } / ${data.writeMode || "unknown"}）`
         );
       }
+      if (data && data.ok && Number(data.ver) >= 6) {
+        // 新版已逐格寫入；以回傳為準，並同步本機快取
+        rememberBankRow(cols);
+        // 背景重讀 A 欄索引
+        loadBankIndexFromSheet().catch(() => {});
+        return data;
+      }
+      if (data && data.ok && data.ver != null && Number(data.ver) < 6) {
+        throw new Error(
+          `寫入服務仍是舊版（ver ${data.ver}）。請刪除專案裡多餘的 .gs，只留最新 VocabBank，並部署「新版本」。`
+        );
+      }
+      // 無 JSON／無 ver：可能打到舊 doPost 或轉址失敗
+      await new Promise((r) => setTimeout(r, 1200));
+      try {
+        await loadBankIndexFromSheet();
+      } catch (e) {}
+      const key = bankKey(cols[0]);
+      let saved = bankDetails.get(key);
+      if (!saved && bankIndex.has(key)) {
+        try {
+          saved = await loadBankDetailFromSheet(bankIndex.get(key));
+          if (saved) bankDetails.set(key, saved);
+        } catch (e) {}
+      }
+      const looksSaved = saved && saved.slice(1).some((c) => c);
+      if (!looksSaved) {
+        const snippet = String(rawText || "")
+          .replace(/\s+/g, " ")
+          .slice(0, 160);
+        throw new Error(
+          `儲存未成功（回應無 ver）。請檢查 Apps Script 是否有多個 doPost。回應片段：${snippet}`
+        );
+      }
+      rememberBankRow(cols);
       return data || { ok: true };
     }
 
@@ -711,17 +856,35 @@
         btn.className = "term";
         btn.dataset.term = term;
         btn.textContent = term;
-        if (bankMap.has(bankKey(term))) btn.classList.add("saved");
+        if (bankIndex.has(bankKey(term))) btn.classList.add("saved");
         btn.addEventListener("click", async () => {
           document.querySelectorAll(".term").forEach((b) => b.classList.remove("active"));
           btn.classList.add("active");
           const key = bankKey(term);
-          const cached = bankMap.get(key);
-          if (cached && cached.slice(1).some((c) => c)) {
-            showDetail(term, cached, "來源：試算表（已儲存，不需再問 Gemini）", false);
-            els.status.textContent = `已載入「${plainTerm(term)}」的試算表資料。`;
-            currentPrompt = "";
-            return;
+          if (bankIndex.has(key)) {
+            let cols = bankDetails.get(key);
+            if (!cols) {
+              els.status.textContent = `正在載入「${plainTerm(term)}」…`;
+              try {
+                cols = await loadBankDetailFromSheet(bankIndex.get(key));
+                if (cols) bankDetails.set(key, cols);
+              } catch (err) {
+                console.error(err);
+                els.status.textContent = `載入失敗：${err.message}`;
+                return;
+              }
+            }
+            if (cols && cols.slice(1).some((c) => String(c || "").trim())) {
+              showDetail(
+                term,
+                cols,
+                "來源：試算表（可修改後再覆蓋）",
+                false
+              );
+              els.status.textContent = `已載入「${plainTerm(term)}」。若要更新，可複製給 Gemini 後貼回並覆蓋。`;
+              currentPrompt = "";
+              return;
+            }
           }
           showDetail(term, null, "試算表尚無此語詞，請用 Gemini 生成後貼上儲存", true);
           els.status.textContent = `「${plainTerm(term)}」尚未建檔。`;
@@ -731,18 +894,17 @@
       });
     }
 
-    els.askGeminiBtn.addEventListener("click", () => {
-      if (currentTerm) askGemini(currentTerm);
+    els.askGeminiBtn.addEventListener("click", async () => {
+      if (!currentTerm) return;
+      currentPrompt = buildPrompt(currentTerm);
+      const ok = await copyText(currentPrompt);
+      els.status.textContent = ok
+        ? "提示詞已複製。請到 Gemini 視窗貼上（Cmd/Ctrl+V）送出。"
+        : "複製失敗，請再按一次「複製給 Gemini」。";
     });
 
-    els.copyRowBtn.addEventListener("click", async () => {
-      const cols =
-        currentCols ||
-        parseHashRow(els.geminiPaste.value, currentTerm);
-      const ok = await copyText(cols.join("\t"));
-      els.status.textContent = ok
-        ? "已複製成試算表列（Tab 分隔），可直接貼到試算表。"
-        : "複製失敗。";
+    els.toneozBtn.addEventListener("click", () => {
+      window.open("https://toneoz.com/imez", "_blank", "noopener,noreferrer");
     });
 
     els.saveSheetBtn.addEventListener("click", async () => {
@@ -755,8 +917,8 @@
         els.status.textContent = "寫入試算表中…";
         await saveToSheet(cols);
         currentCols = cols;
-        showDetail(currentTerm || cols[0], cols, "來源：剛寫入試算表", false);
-        els.status.textContent = `已儲存「${cols[0]}」到試算表。`;
+        showDetail(currentTerm || cols[0], cols, "來源：已寫入試算表（可再修改覆蓋）", false);
+        els.status.textContent = `已覆蓋「${cols[0]}」回試算表。`;
       } catch (err) {
         console.error(err);
         els.status.textContent = `儲存失敗：${err.message}`;
@@ -783,18 +945,37 @@
       renderPool(terms);
       els.status.textContent = "正在讀取試算表語詞庫…";
       try {
-        await loadBankFromSheet();
+        await loadBankIndexFromSheet();
         markSavedTerms();
-        els.status.textContent = `試算表已載入 ${bankMap.size} 筆語詞資料。`;
+        els.status.textContent = `試算表已載入 ${bankIndex.size} 筆語詞（僅 A 欄索引）。`;
       } catch (err) {
         console.error(err);
         els.status.textContent =
-          "試算表讀取失敗（仍可請 Gemini 生成）。請確認試算表為「知道連結者可檢視/編輯」。";
+          "試算表讀取失敗（仍可複製給 Gemini）。請確認試算表為「知道連結者可檢視/編輯」。";
       }
-      const ok = await pingScriptUrl(SCRIPT_URL);
-      if (!ok) {
+      try {
+        const res = await fetch(
+          SCRIPT_URL + (SCRIPT_URL.includes("?") ? "&" : "?") + "action=ping",
+          { cache: "no-store" }
+        );
+        const raw = await res.text();
+        const data = parseAppsScriptJson(raw);
+        if (data && data.ok && data.ver != null) {
+          if (Number(data.ver) < 6) {
+            els.status.textContent +=
+              " ※請改部署 VocabBank v6（並刪除專案裡其他含 doPost 的舊檔）。";
+          }
+        } else if (data && data.ok) {
+          const snip = raw.replace(/\s+/g, " ").slice(0, 120);
+          els.status.textContent +=
+            ` ※寫入服務無 ver（目前內建網址回傳：${snip}）。請用「管理部署→編輯→新版本」更新同一個 /exec，或把有 ver:6 的新網址貼給我替換。`;
+        } else {
+          els.status.textContent +=
+            " ※寫入服務 ping 無法解析，自動存檔可能失敗。";
+        }
+      } catch (e) {
         els.status.textContent +=
-          " ※ 寫入服務連線異常，自動存檔可能失敗（仍可用「複製列」手動貼）。";
+          " ※ 寫入服務連線異常，自動存檔可能失敗。";
       }
     }
 
