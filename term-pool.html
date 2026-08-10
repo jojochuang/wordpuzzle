@@ -31,6 +31,34 @@
       padding: 1.25rem 1.1rem 2.5rem;
     }
     h1 { margin: 0 0 0.35rem; font-size: 1.55rem; }
+    .page-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 0.75rem;
+      margin-bottom: 0.15rem;
+      flex-wrap: wrap;
+    }
+    .page-head-text { min-width: 0; flex: 1; }
+    .copy-all-btn {
+      flex: 0 0 auto;
+      border: 0;
+      border-radius: 999px;
+      padding: 0.55rem 0.95rem;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+      background: var(--accent);
+      color: #fff;
+      white-space: nowrap;
+      box-shadow: 0 8px 20px rgba(15, 118, 110, 0.22);
+    }
+    .copy-all-btn:hover { filter: brightness(1.05); }
+    .copy-all-btn:disabled {
+      opacity: 0.55;
+      cursor: default;
+      filter: none;
+    }
     .sub { margin: 0 0 0.4rem; color: var(--muted); }
     .hint { margin: 0 0 0.75rem; color: var(--accent); font-size: 0.92rem; }
     .status { margin: 0 0 0.85rem; min-height: 1.2rem; color: #b45309; font-size: 0.9rem; }
@@ -214,9 +242,16 @@
 </head>
 <body>
   <main>
-      <h1>語詞庫</h1>
-      <p id="sub" class="sub">共 0 個語詞</p>
-      <p class="hint">點選語詞：已建檔則顯示試算表內容；尚未建檔則複製提示詞給 Gemini，貼回後儲存。</p>
+      <div class="page-head">
+        <div class="page-head-text">
+          <h1>語詞庫</h1>
+          <p id="sub" class="sub">共 0 個語詞</p>
+        </div>
+        <button id="copyAllBtn" class="copy-all-btn" type="button" title="複製本頁語詞的 A～K 欄，可貼到自己的試算表">
+          全部複製到自己的試算表
+        </button>
+      </div>
+      <p class="hint">點選語詞：已建檔則顯示試算表內容；尚未建檔則複製提示詞給 Gemini，貼回後儲存。右上角可一次複製本頁語詞的 A～K，貼到自己的試算表。</p>
 
       <p id="status" class="status"></p>
       <div id="list" class="list"></div>
@@ -287,6 +322,7 @@
       askGeminiBtn: document.getElementById("askGeminiBtn"),
       toneozBtn: document.getElementById("toneozBtn"),
       saveSheetBtn: document.getElementById("saveSheetBtn"),
+      copyAllBtn: document.getElementById("copyAllBtn"),
       speakStage: document.getElementById("speakStage"),
       speakStageCard: document.getElementById("speakStageCard"),
     };
@@ -487,6 +523,71 @@
       bankDetails.set(key, row);
       markSavedTerms();
       return key;
+    }
+
+    function tsvCell(value) {
+      const s = String(value == null ? "" : value);
+      if (/[\t\n\r"]/.test(s)) {
+        return `"${s.replace(/"/g, '""')}"`;
+      }
+      return s;
+    }
+
+    function rowsToTsv(rows) {
+      return rows.map((row) => row.map(tsvCell).join("\t")).join("\n");
+    }
+
+    /** 一次拉回整表 A–K，供「全部複製」使用（不影響平常懶載入） */
+    async function loadAllBankRowsFromSheet() {
+      const res = await fetch(
+        gvizCsvUrl("select A,B,C,D,E,F,G,H,I,J,K"),
+        { cache: "no-store" }
+      );
+      if (!res.ok) throw new Error(`讀取語詞庫失敗 HTTP ${res.status}`);
+      const rows = parseCsv(await res.text());
+      const map = new Map();
+      for (let i = 0; i < rows.length; i++) {
+        const cols = normalizeBankCols(rows[i]);
+        const key = plainTerm(cols[0]);
+        if (!key || key === "語詞") continue;
+        map.set(key, cols);
+        bankIndex.set(key, cols[0]);
+        bankDetails.set(key, cols);
+      }
+      markSavedTerms();
+      return map;
+    }
+
+    async function copyAllPoolToClipboard() {
+      const terms = loadPoolTerms();
+      if (!terms.length) {
+        throw new Error("語詞庫是空的，請先在遊戲中加入語詞。");
+      }
+      els.copyAllBtn.disabled = true;
+      els.status.textContent = "正在整理本頁語詞的 A～K…";
+      const allRows = await loadAllBankRowsFromSheet();
+      const out = [FIELD_LABELS.slice()];
+      let hit = 0;
+      let missing = 0;
+      for (const term of terms) {
+        const key = bankKey(term);
+        const fromBank = allRows.get(key);
+        if (fromBank) {
+          out.push(fromBank.slice(0, 11));
+          hit += 1;
+        } else {
+          const row = normalizeBankCols([term]);
+          out.push(row);
+          missing += 1;
+        }
+      }
+      const text = rowsToTsv(out);
+      const ok = await copyText(text);
+      if (!ok) throw new Error("複製失敗，請再試一次。");
+      els.status.textContent =
+        missing > 0
+          ? `已複製 ${hit} 筆完整資料（另 ${missing} 筆尚未建檔，僅含語詞）。請到自己的試算表貼上。`
+          : `已複製 ${hit} 筆 A～K（含標題列）。請到自己的試算表貼上。`;
     }
 
     function markSavedTerms() {
@@ -905,6 +1006,17 @@
 
     els.toneozBtn.addEventListener("click", () => {
       window.open("https://toneoz.com/imez", "_blank", "noopener,noreferrer");
+    });
+
+    els.copyAllBtn.addEventListener("click", async () => {
+      try {
+        await copyAllPoolToClipboard();
+      } catch (err) {
+        console.error(err);
+        els.status.textContent = `複製失敗：${err.message}`;
+      } finally {
+        els.copyAllBtn.disabled = false;
+      }
     });
 
     els.saveSheetBtn.addEventListener("click", async () => {
