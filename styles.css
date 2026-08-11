@@ -741,6 +741,22 @@ select:disabled {
     padding: 0.65rem 0.85rem;
     font-size: 0.88rem;
   }
+
+  /* 小螢幕：常用語詞與語詞庫並列在下方，避免直向堆疊擋到拼圖 */
+  .fab-stack {
+    left: 0.65rem;
+    right: 0.65rem;
+    bottom: 0.65rem;
+    flex-direction: row;
+    justify-content: center;
+    align-items: center;
+    gap: 0.45rem;
+  }
+
+  .vocab-fab {
+    padding: 0.62rem 0.9rem;
+    font-size: 0.88rem;
+  }
 }
 
 @media (max-height: 720px) {
