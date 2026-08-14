@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="styles.css?v=25" />
+  <link rel="stylesheet" href="styles.css?v=27" />
 </head>
 <body>
   <div class="bg-wash" aria-hidden="true"></div>
@@ -43,6 +43,11 @@
           開始教學（全螢幕）
         </button>
         <button id="reload-btn" class="btn btn-ghost" type="button">重新載入試算表</button>
+      </div>
+
+      <div class="book-links" aria-label="各冊直接進入網址">
+        <p class="field-label">各冊一鍵複製網址</p>
+        <div id="book-link-list" class="book-link-list"></div>
       </div>
 
       <p id="status" class="status" role="status"></p>
@@ -128,6 +133,6 @@
     </aside>
   </section>
 
-  <script src="app.js?v=26"></script>
+  <script src="app.js?v=31"></script>
 </body>
 </html>

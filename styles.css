@@ -168,6 +168,40 @@ select:disabled {
   word-break: break-all;
 }
 
+.book-links {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.book-link-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.book-link-btn {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0.45rem 0.8rem;
+  font: inherit;
+  font-size: 0.88rem;
+  font-weight: 700;
+  background: rgba(255, 252, 247, 0.92);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.book-link-btn:hover {
+  border-color: #0f766e;
+  background: #e8f5f3;
+}
+
+.book-link-btn.copied {
+  background: #0f766e;
+  color: #fff;
+  border-color: #0f766e;
+}
+
 .setup-actions {
   display: grid;
   gap: 0.65rem;

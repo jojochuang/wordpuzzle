@@ -1,5 +1,5 @@
 (() => {
-  const SHEET_ID = "1MxROi0vIZ2Dk1doq3jJWlP28_t2R7j7q8N4h1YCs8Qc";
+  const DEFAULT_SHEET_ID = "1MxROi0vIZ2Dk1doq3jJWlP28_t2R7j7q8N4h1YCs8Qc";
   const VOCAB_SHEET_ID = "17bjNhzlQH43hE3k27ZzRVLZYX3Vt1vEqQXSncy2ADI4";
   const VOCAB_GID = "1950889734";
   const VOCAB_RANGE = "A2:CZ2882";
@@ -7,12 +7,54 @@
   const BANK_SHEET_ID = "12tOoECKZELXUdhrJzTQP3h0DgDmS4oM80DdIvIGLpGM";
   const BANK_GID = "257311027";
 
-  /** 試算表分頁：A 欄單元、B 欄生字 */
+  /**
+   * 冊別選單
+   * - rows：A 欄單元、B+C+D 欄生字（一～五冊，同繁體字帖）
+   * - columns：第 1 列為單元名，其下各列為該欄生字（TK）
+   */
   const BOOKS = [
-    { gid: "1085808977", name: "一冊" },
-    { gid: "1601198504", name: "二冊" },
-    { gid: "1424562399", name: "三冊" },
-    { gid: "1127835491", name: "四冊" },
+    {
+      id: "book1",
+      sheetId: DEFAULT_SHEET_ID,
+      gid: "1085808977",
+      name: "一冊",
+      layout: "rows",
+    },
+    {
+      id: "book2",
+      sheetId: DEFAULT_SHEET_ID,
+      gid: "1601198504",
+      name: "二冊",
+      layout: "rows",
+    },
+    {
+      id: "book3",
+      sheetId: DEFAULT_SHEET_ID,
+      gid: "1424562399",
+      name: "三冊",
+      layout: "rows",
+    },
+    {
+      id: "book4",
+      sheetId: DEFAULT_SHEET_ID,
+      gid: "1127835491",
+      name: "四冊",
+      layout: "rows",
+    },
+    {
+      id: "book5",
+      sheetId: DEFAULT_SHEET_ID,
+      gid: "1033469457",
+      name: "五冊",
+      layout: "rows",
+    },
+    {
+      id: "tk",
+      sheetId: "18VNo2yeCM9x_IVds85WkIV2ueyKc-IAj60UNvOglGxM",
+      gid: "761917648",
+      name: "TK",
+      layout: "rows",
+    },
   ];
 
   const TILE_COLORS = [
@@ -42,6 +84,7 @@
     teach: document.getElementById("teach"),
     bookSelect: document.getElementById("book-select"),
     unitSelect: document.getElementById("unit-select"),
+    bookLinkList: document.getElementById("book-link-list"),
     preview: document.getElementById("preview"),
     startBtn: document.getElementById("start-btn"),
     reloadBtn: document.getElementById("reload-btn"),
@@ -115,8 +158,197 @@
     0, 1, 2, 3, 7, 11, 15, 14, 13, 12, 8, 4, // 外圍
   ];
 
-  function sheetCsvUrl(gid) {
-    return `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&gid=${gid}`;
+  function sheetCsvUrl(sheetId, gid) {
+    return `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&gid=${gid}`;
+  }
+
+  function getBookById(bookId) {
+    return BOOKS.find((b) => b.id === bookId) || null;
+  }
+
+  function uniqueHanChars(raw) {
+    const seen = new Set();
+    const out = [];
+    for (const ch of extractChars(raw)) {
+      if (seen.has(ch)) continue;
+      seen.add(ch);
+      out.push(ch);
+    }
+    return out;
+  }
+
+  /** 一～五冊：A=單元；生字讀 B+C+D（同繁體字帖） */
+  function parseRowUnits(rows) {
+    const start = /課次|週數|單元/.test(rows[0]?.[0] || "") ? 1 : 0;
+    const units = [];
+    for (let i = start; i < rows.length; i += 1) {
+      const unit = (rows[i][0] || "").trim();
+      const raw = [1, 2, 3]
+        .map((c) => rows[i][c] || "")
+        .join("")
+        .replace(/\s/g, "");
+      const chars = uniqueHanChars(raw);
+      if (!unit || !chars.length) continue;
+      units.push({ unit, chars });
+    }
+    return units;
+  }
+
+  /** TK：第 1 列為單元名，其下各列串成該欄生字 */
+  function parseColumnUnits(rows) {
+    if (!rows.length) return [];
+    const headers = rows[0] || [];
+    const units = [];
+    for (let col = 0; col < headers.length; col += 1) {
+      const unit = String(headers[col] || "").trim();
+      if (!unit) continue;
+      let raw = "";
+      for (let r = 1; r < rows.length; r += 1) {
+        raw += rows[r][col] || "";
+      }
+      const chars = uniqueHanChars(raw);
+      if (!chars.length) continue;
+      units.push({ unit, chars });
+    }
+    return units;
+  }
+
+  async function loadBook(bookId) {
+    if (cache[bookId]) return cache[bookId];
+    const book = getBookById(bookId);
+    if (!book) throw new Error("找不到冊別");
+
+    const res = await fetch(sheetCsvUrl(book.sheetId, book.gid), {
+      cache: "no-store",
+    });
+    if (!res.ok) {
+      throw new Error(`讀取試算表失敗（HTTP ${res.status}）`);
+    }
+
+    const text = await res.text();
+    const rows = parseCsv(text);
+    if (!rows.length) {
+      throw new Error("試算表是空的");
+    }
+
+    const units =
+      book.layout === "columns" ? parseColumnUnits(rows) : parseRowUnits(rows);
+
+    cache[bookId] = units;
+    return units;
+  }
+
+  function setStatus(msg) {
+    els.status.textContent = msg || "";
+  }
+
+  function fillBookSelect() {
+    els.bookSelect.innerHTML = BOOKS.map(
+      (b) => `<option value="${b.id}">${b.name}</option>`
+    ).join("");
+    els.bookSelect.disabled = false;
+    renderBookLinkButtons();
+  }
+
+  const PUBLIC_BASE_URL = "https://jojochuang.github.io/wordpuzzle/";
+
+  function bookEntryUrl(bookId) {
+    const u = new URL(PUBLIC_BASE_URL);
+    u.searchParams.set("book", bookId);
+    return u.toString();
+  }
+
+  function syncBookQuery(bookId) {
+    if (!(window.history && window.history.replaceState)) return;
+    try {
+      const u = new URL(window.location.href);
+      if (bookId) u.searchParams.set("book", bookId);
+      else u.searchParams.delete("book");
+      window.history.replaceState({}, "", u.pathname + u.search + u.hash);
+    } catch (e) {}
+  }
+
+  function getBookIdFromQuery() {
+    try {
+      const id = new URLSearchParams(window.location.search).get("book");
+      if (id && getBookById(id)) return id;
+    } catch (e) {}
+    return BOOKS[0]?.id || "";
+  }
+
+  async function copyText(text) {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+        return true;
+      }
+    } catch (e) {}
+    try {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.setAttribute("readonly", "");
+      ta.style.position = "fixed";
+      ta.style.left = "-9999px";
+      document.body.appendChild(ta);
+      ta.select();
+      const ok = document.execCommand("copy");
+      document.body.removeChild(ta);
+      return ok;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function renderBookLinkButtons() {
+    if (!els.bookLinkList) return;
+    els.bookLinkList.innerHTML = "";
+    BOOKS.forEach((book) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "book-link-btn";
+      btn.textContent = `複製${book.name}`;
+      btn.title = bookEntryUrl(book.id);
+      btn.addEventListener("click", async () => {
+        const url = bookEntryUrl(book.id);
+        const ok = await copyText(url);
+        if (ok) {
+          btn.classList.add("copied");
+          btn.textContent = `已複製${book.name}`;
+          setStatus(`${book.name}網址已複製`);
+          setTimeout(() => {
+            btn.classList.remove("copied");
+            btn.textContent = `複製${book.name}`;
+          }, 1600);
+        } else {
+          setStatus("複製失敗，請手動選取網址列");
+          window.prompt("複製此網址：", url);
+        }
+      });
+      els.bookLinkList.appendChild(btn);
+    });
+  }
+
+  async function refreshCurrentBook() {
+    const bookId = els.bookSelect.value;
+    if (!bookId) return;
+
+    syncBookQuery(bookId);
+    setStatus("正在讀取試算表…");
+    els.unitSelect.disabled = true;
+    els.startBtn.disabled = true;
+
+    try {
+      delete cache[bookId];
+      const units = await loadBook(bookId);
+      fillUnitSelect(units);
+      setStatus(units.length ? "" : "此冊找不到生字資料");
+    } catch (err) {
+      console.error(err);
+      fillUnitSelect([]);
+      setStatus(
+        "無法讀取試算表。請確認已設為「知道連結的任何人可檢視」，並檢查網路。"
+      );
+    }
   }
 
   function vocabGvizUrl() {
@@ -447,46 +679,6 @@
     return list;
   }
 
-  async function loadBook(gid) {
-    if (cache[gid]) return cache[gid];
-
-    const res = await fetch(sheetCsvUrl(gid), { cache: "no-store" });
-    if (!res.ok) {
-      throw new Error(`讀取試算表失敗（HTTP ${res.status}）`);
-    }
-
-    const text = await res.text();
-    const rows = parseCsv(text);
-    if (!rows.length) {
-      throw new Error("試算表是空的");
-    }
-
-    // 略過表頭：第一列 A 通常是「課次／週數」
-    const start = /課次|週數|單元/.test(rows[0][0] || "") ? 1 : 0;
-    const units = [];
-
-    for (let i = start; i < rows.length; i += 1) {
-      const unit = (rows[i][0] || "").trim();
-      const chars = extractChars(rows[i][1] || "");
-      if (!unit || !chars.length) continue;
-      units.push({ unit, chars });
-    }
-
-    cache[gid] = units;
-    return units;
-  }
-
-  function setStatus(msg) {
-    els.status.textContent = msg || "";
-  }
-
-  function fillBookSelect() {
-    els.bookSelect.innerHTML = BOOKS.map(
-      (b) => `<option value="${b.gid}">${b.name}</option>`
-    ).join("");
-    els.bookSelect.disabled = false;
-  }
-
   function fillUnitSelect(units) {
     currentUnits = units;
     els.unitSelect.innerHTML = units.length
@@ -511,28 +703,6 @@
     }
     els.preview.textContent = `本單元生字（共 ${unit.chars.length} 字）：${unit.chars.join("、")}`;
     els.startBtn.disabled = unit.chars.length === 0;
-  }
-
-  async function refreshCurrentBook() {
-    const gid = els.bookSelect.value;
-    if (!gid) return;
-
-    setStatus("正在讀取試算表…");
-    els.unitSelect.disabled = true;
-    els.startBtn.disabled = true;
-
-    try {
-      delete cache[gid];
-      const units = await loadBook(gid);
-      fillUnitSelect(units);
-      setStatus(units.length ? "" : "此冊找不到生字資料");
-    } catch (err) {
-      console.error(err);
-      fillUnitSelect([]);
-      setStatus(
-        "無法讀取試算表。請確認已設為「知道連結的任何人可檢視」，並檢查網路。"
-      );
-    }
   }
 
   function makeJigsawEdges() {
@@ -998,6 +1168,8 @@
     bindEvents();
     updateTermPoolBtn();
     fillBookSelect();
+    const fromQuery = getBookIdFromQuery();
+    if (fromQuery) els.bookSelect.value = fromQuery;
     await refreshCurrentBook();
   }
 
