@@ -278,6 +278,19 @@ select:disabled {
   backdrop-filter: blur(8px);
 }
 
+.teach-bar-left {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  min-width: 0;
+}
+
+.teach-menu-btn {
+  flex-shrink: 0;
+  font-weight: 700;
+}
+
 .teach-meta,
 .teach-actions {
   display: flex;
@@ -758,17 +771,21 @@ select:disabled {
 
 @media (max-width: 720px) {
   .teach-bar {
-    justify-content: center;
+    justify-content: flex-start;
   }
 
-  .teach-meta,
+  .teach-bar-left,
   .teach-actions {
     width: 100%;
-    justify-content: center;
+  }
+
+  .teach-bar-left {
+    justify-content: flex-start;
   }
 
   .teach-actions {
     margin-left: 0;
+    justify-content: flex-start;
   }
 
   .teach-actions .btn {

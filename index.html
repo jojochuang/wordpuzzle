@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="styles.css?v=27" />
+  <link rel="stylesheet" href="styles.css?v=28" />
 </head>
 <body>
   <div class="bg-wash" aria-hidden="true"></div>
@@ -57,9 +57,12 @@
   <!-- 教學全螢幕 -->
   <section id="teach" class="screen teach-screen" hidden>
     <header class="teach-bar">
-      <div class="teach-meta">
-        <span id="teach-unit" class="chip"></span>
-        <span id="teach-progress" class="chip chip-muted"></span>
+      <div class="teach-bar-left">
+        <button id="menu-btn" class="btn btn-ghost teach-menu-btn" type="button">回選單</button>
+        <div class="teach-meta">
+          <span id="teach-unit" class="chip"></span>
+          <span id="teach-progress" class="chip chip-muted"></span>
+        </div>
       </div>
       <div class="teach-actions">
         <button id="reveal-btn" class="btn btn-soft" type="button">全部揭開</button>
@@ -133,6 +136,6 @@
     </aside>
   </section>
 
-  <script src="app.js?v=31"></script>
+  <script src="app.js?v=32"></script>
 </body>
 </html>

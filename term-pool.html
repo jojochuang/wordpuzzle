@@ -62,7 +62,7 @@
     .sub { margin: 0 0 0.4rem; color: var(--muted); }
     .hint { margin: 0 0 0.75rem; color: var(--accent); font-size: 0.92rem; }
     .status { margin: 0 0 0.85rem; min-height: 1.2rem; color: #b45309; font-size: 0.9rem; }
-    .actions button, .term {
+    .actions button {
       border: 0;
       border-radius: 999px;
       padding: 0.5rem 0.85rem;
@@ -86,11 +86,15 @@
       margin-bottom: 1rem;
     }
     .term {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
       font-family: "BpmfZihiKaiStd", "標楷體", serif;
       font-size: 1.4rem;
       font-weight: 400;
       line-height: 1.85;
-      padding: 0.45rem 0.75rem 0.3rem;
+      padding: 0.45rem 0.35rem 0.3rem 0.75rem;
       border-radius: 12px;
       background: var(--pane-bg);
       border: 1px solid var(--line);
@@ -100,6 +104,40 @@
     .term:hover { border-color: var(--accent); transform: translateY(-1px); }
     .term.active { background: #d7f0ec; border-color: var(--accent); }
     .term.saved { box-shadow: inset 0 0 0 2px rgba(15,118,110,0.35); }
+    .term-label {
+      cursor: pointer;
+      padding-right: 0.15rem;
+      border: 0;
+      background: transparent;
+      font: inherit;
+      color: inherit;
+    }
+    .term-remove {
+      flex-shrink: 0;
+      width: 1.55rem;
+      height: 1.55rem;
+      border: 0;
+      border-radius: 999px;
+      background: rgba(28, 36, 48, 0.08);
+      color: #6b7280;
+      font: inherit;
+      font-size: 1rem;
+      line-height: 1;
+      cursor: pointer;
+      padding: 0;
+    }
+    .term-remove:hover {
+      background: #fee2e2;
+      color: #b91c1c;
+    }
+    .actions .danger {
+      background: transparent;
+      border: 1px solid #fca5a5;
+      color: #b91c1c;
+    }
+    .actions .danger:hover {
+      background: #fef2f2;
+    }
     .empty { color: var(--muted); }
     .detail {
       display: none;
@@ -251,7 +289,7 @@
           全部複製到自己的試算表
         </button>
       </div>
-      <p class="hint">點選語詞：已建檔則顯示試算表內容；尚未建檔則複製提示詞給 Gemini，貼回後儲存。右上角可一次複製本頁語詞的 A～K，貼到自己的試算表。</p>
+      <p class="hint">點選語詞查看解釋與造句；語詞旁的 × 可從本頁語詞庫移除（不會刪試算表資料）。也可直接用網址開啟，例如 <code>term-pool.html?q=開心</code>。</p>
 
       <p id="status" class="status"></p>
       <div id="list" class="list"></div>
@@ -270,6 +308,7 @@
             <button id="askGeminiBtn" class="primary" type="button">複製給 Gemini</button>
             <button id="toneozBtn" class="ghost" type="button">去澳聲通校正注音</button>
             <button id="saveSheetBtn" class="primary" type="button">覆蓋回試算表</button>
+            <button id="removePoolBtn" class="danger" type="button">從語詞庫移除</button>
           </div>
           <p class="gemini-help">
             若要修改句子，可貼上新內容後按「覆蓋回試算表」更新原資料。
@@ -322,6 +361,7 @@
       askGeminiBtn: document.getElementById("askGeminiBtn"),
       toneozBtn: document.getElementById("toneozBtn"),
       saveSheetBtn: document.getElementById("saveSheetBtn"),
+      removePoolBtn: document.getElementById("removePoolBtn"),
       copyAllBtn: document.getElementById("copyAllBtn"),
       speakStage: document.getElementById("speakStage"),
       speakStageCard: document.getElementById("speakStageCard"),
@@ -607,6 +647,102 @@
       } catch {
         return [];
       }
+    }
+
+    function savePoolTerms(terms) {
+      const list = Array.isArray(terms) ? terms.filter(Boolean) : [];
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+        sessionStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+      } catch (e) {}
+      return list;
+    }
+
+    /** 網址 ?q= / ?term= / ?word= 指定要直接開啟的語詞 */
+    function termFromUrl() {
+      const params = new URLSearchParams(window.location.search);
+      const raw =
+        params.get("q") ||
+        params.get("term") ||
+        params.get("word") ||
+        "";
+      return String(raw || "").trim();
+    }
+
+    function ensureTermInPool(terms, term) {
+      const t = String(term || "").trim();
+      if (!t) return terms;
+      const key = bankKey(t);
+      if (terms.some((x) => bankKey(x) === key)) return terms;
+      const next = terms.concat(t);
+      savePoolTerms(next);
+      return next;
+    }
+
+    function hideDetail() {
+      currentTerm = "";
+      currentCols = null;
+      currentPrompt = "";
+      els.detail.classList.remove("show");
+      els.fields.innerHTML = "";
+      els.geminiPaste.value = "";
+      els.geminiBox.hidden = true;
+      els.detailTerm.textContent = "";
+      els.detailSource.textContent = "";
+      els.detailTermSpeak.hidden = true;
+    }
+
+    function removeTermFromPool(term) {
+      const key = bankKey(term);
+      if (!key) return loadPoolTerms();
+      const next = loadPoolTerms().filter((x) => bankKey(x) !== key);
+      savePoolTerms(next);
+      if (bankKey(currentTerm) === key) hideDetail();
+      renderPool(next);
+      markSavedTerms();
+      els.status.textContent = `已從語詞庫移除「${plainTerm(term)}」（試算表資料仍保留）。`;
+      return next;
+    }
+
+    async function selectTerm(term) {
+      const t = String(term || "").trim();
+      if (!t) return;
+      document.querySelectorAll(".term").forEach((b) => {
+        b.classList.toggle("active", bankKey(b.dataset.term || "") === bankKey(t));
+      });
+      const activeBtn = [...document.querySelectorAll(".term")].find(
+        (b) => bankKey(b.dataset.term || "") === bankKey(t)
+      );
+      if (activeBtn) {
+        try {
+          activeBtn.scrollIntoView({ block: "nearest", behavior: "smooth" });
+        } catch (e) {}
+      }
+
+      const key = bankKey(t);
+      if (bankIndex.has(key)) {
+        let cols = bankDetails.get(key);
+        if (!cols) {
+          els.status.textContent = `正在載入「${plainTerm(t)}」…`;
+          try {
+            cols = await loadBankDetailFromSheet(bankIndex.get(key));
+            if (cols) bankDetails.set(key, cols);
+          } catch (err) {
+            console.error(err);
+            els.status.textContent = `載入失敗：${err.message}`;
+            return;
+          }
+        }
+        if (cols && cols.slice(1).some((c) => String(c || "").trim())) {
+          showDetail(t, cols, "來源：試算表（可修改後再覆蓋）", false);
+          els.status.textContent = `已載入「${plainTerm(t)}」。若要更新，可複製給 Gemini 後貼回並覆蓋。`;
+          currentPrompt = "";
+          return;
+        }
+      }
+      showDetail(t, null, "試算表尚無此語詞，請用 Gemini 生成後貼上儲存", true);
+      els.status.textContent = `「${plainTerm(t)}」尚未建檔。`;
+      await askGemini(t);
     }
 
     function pickVoice() {
@@ -949,49 +1085,40 @@
       if (!terms.length) {
         els.list.innerHTML =
           '<p class="empty">語詞庫是空的，請先在遊戲中點選常用語詞加入。</p>';
+        hideDetail();
         return;
       }
       terms.forEach((term) => {
-        const btn = document.createElement("button");
-        btn.type = "button";
-        btn.className = "term";
-        btn.dataset.term = term;
-        btn.textContent = term;
-        if (bankIndex.has(bankKey(term))) btn.classList.add("saved");
-        btn.addEventListener("click", async () => {
-          document.querySelectorAll(".term").forEach((b) => b.classList.remove("active"));
-          btn.classList.add("active");
-          const key = bankKey(term);
-          if (bankIndex.has(key)) {
-            let cols = bankDetails.get(key);
-            if (!cols) {
-              els.status.textContent = `正在載入「${plainTerm(term)}」…`;
-              try {
-                cols = await loadBankDetailFromSheet(bankIndex.get(key));
-                if (cols) bankDetails.set(key, cols);
-              } catch (err) {
-                console.error(err);
-                els.status.textContent = `載入失敗：${err.message}`;
-                return;
-              }
-            }
-            if (cols && cols.slice(1).some((c) => String(c || "").trim())) {
-              showDetail(
-                term,
-                cols,
-                "來源：試算表（可修改後再覆蓋）",
-                false
-              );
-              els.status.textContent = `已載入「${plainTerm(term)}」。若要更新，可複製給 Gemini 後貼回並覆蓋。`;
-              currentPrompt = "";
-              return;
-            }
-          }
-          showDetail(term, null, "試算表尚無此語詞，請用 Gemini 生成後貼上儲存", true);
-          els.status.textContent = `「${plainTerm(term)}」尚未建檔。`;
-          await askGemini(term);
+        const wrap = document.createElement("div");
+        wrap.className = "term";
+        wrap.dataset.term = term;
+        if (bankIndex.has(bankKey(term))) wrap.classList.add("saved");
+        if (bankKey(currentTerm) === bankKey(term)) wrap.classList.add("active");
+
+        const label = document.createElement("button");
+        label.type = "button";
+        label.className = "term-label";
+        label.textContent = term;
+        label.title = `查看「${term}」`;
+        label.addEventListener("click", () => {
+          selectTerm(term);
         });
-        els.list.appendChild(btn);
+
+        const removeBtn = document.createElement("button");
+        removeBtn.type = "button";
+        removeBtn.className = "term-remove";
+        removeBtn.setAttribute("aria-label", `從語詞庫移除「${term}」`);
+        removeBtn.title = `從語詞庫移除「${term}」`;
+        removeBtn.textContent = "×";
+        removeBtn.addEventListener("click", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          removeTermFromPool(term);
+        });
+
+        wrap.appendChild(label);
+        wrap.appendChild(removeBtn);
+        els.list.appendChild(wrap);
       });
     }
 
@@ -1002,6 +1129,15 @@
       els.status.textContent = ok
         ? "提示詞已複製。請到 Gemini 視窗貼上（Cmd/Ctrl+V）送出。"
         : "複製失敗，請再按一次「複製給 Gemini」。";
+    });
+
+    els.removePoolBtn.addEventListener("click", () => {
+      if (!currentTerm) return;
+      const name = plainTerm(currentTerm);
+      if (!window.confirm(`要從語詞庫移除「${name}」嗎？\n（試算表裡的解釋與造句不會刪除）`)) {
+        return;
+      }
+      removeTermFromPool(currentTerm);
     });
 
     els.toneozBtn.addEventListener("click", () => {
@@ -1053,7 +1189,9 @@
     }
 
     async function init() {
-      const terms = loadPoolTerms();
+      const deepTerm = termFromUrl();
+      let terms = loadPoolTerms();
+      if (deepTerm) terms = ensureTermInPool(terms, deepTerm);
       renderPool(terms);
       els.status.textContent = "正在讀取試算表語詞庫…";
       try {
@@ -1088,6 +1226,10 @@
       } catch (e) {
         els.status.textContent +=
           " ※ 寫入服務連線異常，自動存檔可能失敗。";
+      }
+
+      if (deepTerm) {
+        await selectTerm(deepTerm);
       }
     }
 

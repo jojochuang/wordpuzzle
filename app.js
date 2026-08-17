@@ -99,6 +99,7 @@
     autoRevealBtn: document.getElementById("auto-reveal-btn"),
     revealSpeed: document.getElementById("reveal-speed"),
     nextBtn: document.getElementById("next-btn"),
+    menuBtn: document.getElementById("menu-btn"),
     exitBtn: document.getElementById("exit-btn"),
     answerToast: document.getElementById("answer-toast"),
     answerChar: document.getElementById("answer-char"),
@@ -913,6 +914,15 @@
     nextBusy = false;
   }
 
+  async function leaveFullscreen() {
+    if (!document.fullscreenElement) return;
+    try {
+      await document.exitFullscreen();
+    } catch {
+      // ignore
+    }
+  }
+
   async function exitTeach() {
     stopAutoReveal();
     stopConfetti();
@@ -924,14 +934,7 @@
     if (els.fabStack) els.fabStack.hidden = true;
     closeVocabPanel();
     nextBusy = false;
-
-    if (document.fullscreenElement) {
-      try {
-        await document.exitFullscreen();
-      } catch {
-        // ignore
-      }
-    }
+    await leaveFullscreen();
   }
 
   function playCorrect() {
@@ -1114,7 +1117,8 @@
     els.revealBtn.addEventListener("click", revealAll);
     els.autoRevealBtn.addEventListener("click", autoRevealSequential);
     els.nextBtn.addEventListener("click", handleNextOrFinish);
-    els.exitBtn.addEventListener("click", exitTeach);
+    els.menuBtn.addEventListener("click", exitTeach);
+    els.exitBtn.addEventListener("click", leaveFullscreen);
     els.prevUnitBtn.addEventListener("click", () => {
       const idx = Number(els.unitSelect.value);
       if (idx > 0) startUnitAt(idx - 1);
