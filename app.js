@@ -253,18 +253,22 @@
 
   const PUBLIC_BASE_URL = "https://jojochuang.github.io/wordpuzzle/";
 
-  function bookEntryUrl(bookId) {
+  function bookEntryUrl(bookId, lessonOneBased) {
     const u = new URL(PUBLIC_BASE_URL);
     u.searchParams.set("book", bookId);
+    if (lessonOneBased >= 1) u.searchParams.set("lesson", String(lessonOneBased));
     return u.toString();
   }
 
-  function syncBookQuery(bookId) {
+  function syncBookQuery(bookId, lessonOneBased) {
     if (!(window.history && window.history.replaceState)) return;
     try {
       const u = new URL(window.location.href);
       if (bookId) u.searchParams.set("book", bookId);
       else u.searchParams.delete("book");
+      if (lessonOneBased >= 1) u.searchParams.set("lesson", String(lessonOneBased));
+      else u.searchParams.delete("lesson");
+      u.searchParams.delete("unit");
       window.history.replaceState({}, "", u.pathname + u.search + u.hash);
     } catch (e) {}
   }
@@ -275,6 +279,17 @@
       if (id && getBookById(id)) return id;
     } catch (e) {}
     return BOOKS[0]?.id || "";
+  }
+
+  /** 課次：1 起算；也接受 unit= */
+  function getLessonFromQuery() {
+    try {
+      const p = new URLSearchParams(window.location.search);
+      const raw = p.get("lesson") || p.get("unit");
+      const n = parseInt(raw, 10);
+      if (!isNaN(n) && n >= 1) return n;
+    } catch (e) {}
+    return 0;
   }
 
   async function copyText(text) {
@@ -333,7 +348,7 @@
     const bookId = els.bookSelect.value;
     if (!bookId) return;
 
-    syncBookQuery(bookId);
+    syncBookQuery(bookId, getLessonFromQuery() || 0);
     setStatus("正在讀取試算表…");
     els.unitSelect.disabled = true;
     els.startBtn.disabled = true;
@@ -867,6 +882,7 @@
 
     els.unitSelect.value = String(unitIndex);
     updatePreview();
+    syncBookQuery(els.bookSelect.value, unitIndex + 1);
 
     queue = shuffle(unit.chars);
     index = 0;
@@ -1175,6 +1191,13 @@
     const fromQuery = getBookIdFromQuery();
     if (fromQuery) els.bookSelect.value = fromQuery;
     await refreshCurrentBook();
+
+    // ?book=book1&lesson=1 → 直接進入該課教學
+    const lesson = getLessonFromQuery();
+    if (lesson >= 1 && currentUnits.length) {
+      const idx = Math.min(lesson - 1, currentUnits.length - 1);
+      await startUnitAt(idx, { requestFs: false });
+    }
   }
 
   init();
