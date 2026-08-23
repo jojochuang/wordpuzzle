@@ -97,6 +97,7 @@
     hint: document.getElementById("hint"),
     revealBtn: document.getElementById("reveal-btn"),
     autoRevealBtn: document.getElementById("auto-reveal-btn"),
+    stopAutoBtn: document.getElementById("stop-auto-btn"),
     revealSpeed: document.getElementById("reveal-speed"),
     nextBtn: document.getElementById("next-btn"),
     menuBtn: document.getElementById("menu-btn"),
@@ -1006,10 +1007,17 @@
         playCorrect();
         index += 1;
         showChar(queue[index]);
+        // 換下一字後自動依序揭開
+        autoRevealSequential();
       }
     } finally {
       nextBusy = false;
     }
+  }
+
+  function setAutoRevealUi(running) {
+    if (els.stopAutoBtn) els.stopAutoBtn.hidden = !running;
+    if (els.autoRevealBtn) els.autoRevealBtn.disabled = !!running;
   }
 
   function stopAutoReveal() {
@@ -1017,6 +1025,7 @@
       clearTimeout(autoRevealTimer);
       autoRevealTimer = null;
     }
+    setAutoRevealUi(false);
   }
 
   function removeTileByIndex(i) {
@@ -1036,17 +1045,25 @@
   }
 
   function autoRevealSequential() {
-    stopAutoReveal();
+    if (autoRevealTimer) {
+      clearTimeout(autoRevealTimer);
+      autoRevealTimer = null;
+    }
     const pending = AUTO_REVEAL_ORDER.filter((i) => {
       const tile = els.tiles.querySelector(`.tile[data-index="${i}"]`);
       return tile && !tile.classList.contains("gone");
     });
-    if (!pending.length) return;
+    if (!pending.length) {
+      setAutoRevealUi(false);
+      return;
+    }
 
     let step = 0;
+    setAutoRevealUi(true);
     const tick = () => {
       if (step >= pending.length) {
         autoRevealTimer = null;
+        setAutoRevealUi(false);
         return;
       }
       removeTileByIndex(pending[step]);
@@ -1133,6 +1150,9 @@
     });
     els.revealBtn.addEventListener("click", revealAll);
     els.autoRevealBtn.addEventListener("click", autoRevealSequential);
+    if (els.stopAutoBtn) {
+      els.stopAutoBtn.addEventListener("click", stopAutoReveal);
+    }
     els.nextBtn.addEventListener("click", handleNextOrFinish);
     els.menuBtn.addEventListener("click", exitTeach);
     els.exitBtn.addEventListener("click", leaveFullscreen);
