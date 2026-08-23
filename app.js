@@ -910,6 +910,7 @@
         // 瀏覽器可能阻擋全螢幕；仍可正常教學
       }
     }
+    updateFullscreenBtn();
   }
 
   async function enterTeach() {
@@ -938,6 +939,26 @@
     } catch {
       // ignore
     }
+  }
+
+  function updateFullscreenBtn() {
+    if (!els.exitBtn) return;
+    const on = !!document.fullscreenElement;
+    els.exitBtn.textContent = on ? "退出全螢幕" : "進入全螢幕";
+    els.exitBtn.setAttribute("aria-pressed", on ? "true" : "false");
+  }
+
+  async function toggleFullscreen() {
+    try {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen();
+      } else if (els.teach?.requestFullscreen) {
+        await els.teach.requestFullscreen();
+      }
+    } catch {
+      // 瀏覽器可能阻擋全螢幕
+    }
+    updateFullscreenBtn();
   }
 
   async function exitTeach() {
@@ -1163,7 +1184,7 @@
     }
     els.nextBtn.addEventListener("click", handleNextOrFinish);
     els.menuBtn.addEventListener("click", exitTeach);
-    els.exitBtn.addEventListener("click", leaveFullscreen);
+    els.exitBtn.addEventListener("click", toggleFullscreen);
     els.prevUnitBtn.addEventListener("click", () => {
       const idx = Number(els.unitSelect.value);
       if (idx > 0) startUnitAt(idx - 1);
@@ -1187,6 +1208,7 @@
     els.vocabCloseBtn.addEventListener("click", closeVocabPanel);
 
     document.addEventListener("fullscreenchange", () => {
+      updateFullscreenBtn();
       if (!document.fullscreenElement && !els.teach.hidden) {
         // 使用者按 Esc 離開全螢幕時，仍留在教學畫面
       }
