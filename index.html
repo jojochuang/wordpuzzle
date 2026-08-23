@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="styles.css?v=29" />
+  <link rel="stylesheet" href="styles.css?v=30" />
 </head>
 <body>
   <div class="bg-wash" aria-hidden="true"></div>
@@ -98,6 +98,10 @@
             <span class="speed-end" aria-hidden="true">快</span>
           </label>
         </div>
+        <div id="fab-stack" class="teach-side-tools">
+          <button id="vocab-btn" class="btn btn-soft teach-tool-btn" type="button">常用語詞</button>
+          <button id="term-pool-fab" class="btn btn-soft teach-tool-btn teach-tool-pool" type="button">語詞庫（0）</button>
+        </div>
         <button id="exit-btn" class="btn btn-ghost" type="button">結束</button>
       </aside>
     </div>
@@ -123,10 +127,6 @@
       </div>
     </div>
 
-    <div id="fab-stack" class="fab-stack" hidden>
-      <button id="vocab-btn" class="vocab-fab" type="button">常用語詞</button>
-      <button id="term-pool-fab" class="vocab-fab term-pool-fab" type="button">語詞庫（0）</button>
-    </div>
     <aside id="vocab-panel" class="vocab-panel" hidden>
       <header class="vocab-panel-head">
         <div>
@@ -140,6 +140,6 @@
     </aside>
   </section>
 
-  <script src="app.js?v=32"></script>
+  <script src="app.js?v=33"></script>
 </body>
 </html>

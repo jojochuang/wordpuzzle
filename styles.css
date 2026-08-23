@@ -629,49 +629,48 @@ select:disabled {
   }
 }
 
-.fab-stack {
-  position: fixed;
-  left: 1.1rem;
-  right: auto;
-  bottom: 1.1rem;
-  z-index: 8;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 0.55rem;
+.teach-side-tools {
+  display: grid;
+  gap: 0.45rem;
+  margin-top: 0.15rem;
+  padding-top: 0.55rem;
+  border-top: 1px solid var(--line);
 }
 
-.vocab-fab {
-  border: 0;
-  border-radius: 999px;
-  padding: 0.85rem 1.2rem;
-  font: inherit;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  color: #fff;
+.teach-tool-btn {
   background: #b45309;
-  box-shadow: var(--shadow);
-  cursor: pointer;
-  transition: transform 160ms ease, background 160ms ease;
+  color: #fff;
+  border-color: #b45309;
 }
 
-.vocab-fab:hover {
-  transform: translateY(-2px);
+.teach-tool-btn:hover:not(:disabled) {
   background: #92400e;
+  color: #fff;
 }
 
-.term-pool-fab {
+.teach-tool-pool {
   background: #0f766e;
+  border-color: #0f766e;
 }
 
-.term-pool-fab:hover {
+.teach-tool-pool:hover:not(:disabled) {
   background: #0d5f59;
+  color: #fff;
 }
 
-.term-pool-fab:disabled {
+.teach-tool-pool:disabled {
   opacity: 0.45;
   cursor: not-allowed;
   transform: none;
+}
+
+/* 舊 floating fab 保留最小樣式，避免殘留 class 爆版 */
+.fab-stack {
+  display: contents;
+}
+
+.vocab-fab {
+  /* 已改右側欄位按鈕；保留空規則以免舊快取異常 */
 }
 
 .vocab-panel {
@@ -814,21 +813,6 @@ select:disabled {
 
   .board {
     width: min(var(--board), calc(100vw - 9.5rem), 70dvh);
-  }
-
-  /* 小螢幕：語詞按鈕靠左下，避開右側操作欄 */
-  .fab-stack {
-    left: 0.55rem;
-    right: auto;
-    bottom: 0.55rem;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 0.4rem;
-  }
-
-  .vocab-fab {
-    padding: 0.55rem 0.8rem;
-    font-size: 0.82rem;
   }
 }
 
