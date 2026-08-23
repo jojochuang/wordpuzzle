@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="styles.css?v=28" />
+  <link rel="stylesheet" href="styles.css?v=29" />
 </head>
 <body>
   <div class="bg-wash" aria-hidden="true"></div>
@@ -64,7 +64,22 @@
           <span id="teach-progress" class="chip chip-muted"></span>
         </div>
       </div>
-      <div class="teach-actions">
+    </header>
+
+    <div class="teach-body">
+      <div class="stage-wrap">
+        <div id="board" class="board" aria-label="猜字拼圖板">
+          <div id="char-layer" class="char-layer" aria-hidden="true">
+            <span class="char-base">永</span>
+            <span class="char-radical">永</span>
+          </div>
+          <div id="tiles" class="tiles" role="group" aria-label="拼圖片"></div>
+        </div>
+        <p id="hint" class="hint">點選彩色拼圖，露出底下的字</p>
+      </div>
+
+      <aside class="teach-actions" aria-label="教學操作">
+        <button id="next-btn" class="btn btn-primary" type="button">下一字</button>
         <button id="reveal-btn" class="btn btn-soft" type="button">全部揭開</button>
         <div class="auto-reveal-group">
           <button id="auto-reveal-btn" class="btn btn-soft" type="button">自動依序揭開</button>
@@ -83,20 +98,8 @@
             <span class="speed-end" aria-hidden="true">快</span>
           </label>
         </div>
-        <button id="next-btn" class="btn btn-primary" type="button">下一字</button>
         <button id="exit-btn" class="btn btn-ghost" type="button">結束</button>
-      </div>
-    </header>
-
-    <div class="stage-wrap">
-      <div id="board" class="board" aria-label="猜字拼圖板">
-        <div id="char-layer" class="char-layer" aria-hidden="true">
-          <span class="char-base">永</span>
-          <span class="char-radical">永</span>
-        </div>
-        <div id="tiles" class="tiles" role="group" aria-label="拼圖片"></div>
-      </div>
-      <p id="hint" class="hint">點選彩色拼圖，露出底下的字</p>
+      </aside>
     </div>
 
     <div id="answer-toast" class="answer-toast" hidden>
