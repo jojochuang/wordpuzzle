@@ -1002,7 +1002,8 @@
       if (index + 1 >= queue.length) {
         celebrateComplete();
       } else {
-        await playCorrect();
+        // 音效不擋換字（以前 await 整段 correct.mp3，感覺要等好幾秒）
+        playCorrect();
         index += 1;
         showChar(queue[index]);
       }
