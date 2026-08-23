@@ -994,20 +994,28 @@
     });
   }
 
+  function waitMs(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
   async function handleNextOrFinish() {
     if (nextBusy || els.teach.hidden) return;
     nextBusy = true;
     stopAutoReveal();
 
     try {
+      // 先揭開剩餘拼圖，同時播音效，再等 2 秒換下一字／完成
+      revealAll();
+      playCorrect();
+      await waitMs(2000);
+
+      if (els.teach.hidden) return; // 等待期間可能已離開教學
+
       if (index + 1 >= queue.length) {
         celebrateComplete();
       } else {
-        // 音效不擋換字（以前 await 整段 correct.mp3，感覺要等好幾秒）
-        playCorrect();
         index += 1;
         showChar(queue[index]);
-        // 換下一字後自動依序揭開
         autoRevealSequential();
       }
     } finally {
