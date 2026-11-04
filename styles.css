@@ -751,6 +751,18 @@ select:disabled {
   border-color: #f3c6d4;
 }
 
+/* 語詞全由「本課＋過去課次（含前面美洲各冊）」生字組成 */
+.vocab-chip--learned {
+  background: #dbeafe;
+  border-color: #93c5fd;
+  color: #1e3a8a;
+}
+
+.vocab-chip--learned.has-bank {
+  background: #e0e7ff;
+  border-color: #a5b4fc;
+}
+
 .vocab-chip.in-pool {
   background: var(--accent-soft);
   border-color: var(--accent);
@@ -759,6 +771,12 @@ select:disabled {
 
 .vocab-chip.has-bank.in-pool {
   background: #ffe0ea;
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px rgba(15, 118, 110, 0.25);
+}
+
+.vocab-chip--learned.in-pool {
+  background: #bfdbfe;
   border-color: var(--accent);
   box-shadow: inset 0 0 0 1px rgba(15, 118, 110, 0.25);
 }
