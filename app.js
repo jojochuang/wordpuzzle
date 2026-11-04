@@ -512,6 +512,20 @@
     }
   }
 
+  /** 從儲存重新讀取語詞庫（語詞庫分頁刪除後，遊戲頁要跟著更新） */
+  function loadTermPoolFromStorage() {
+    try {
+      // 有寫過 localStorage（含空陣列 []）就以它為準，避免 session 舊資料蓋回
+      let raw = localStorage.getItem(TERM_POOL_KEY);
+      if (raw === null) raw = sessionStorage.getItem(TERM_POOL_KEY);
+      const parsed = raw ? JSON.parse(raw) : [];
+      termPool = Array.isArray(parsed) ? parsed.filter(Boolean) : [];
+    } catch (e) {
+      termPool = [];
+    }
+    return termPool;
+  }
+
   function updateTermPoolBtn() {
     const label = `語詞庫（${termPool.length}）`;
     const empty = termPool.length === 0;
@@ -526,6 +540,7 @@
   }
 
   function addToTermPool(term) {
+    loadTermPoolFromStorage();
     if (!term || termPool.includes(term)) return false;
     termPool.push(term);
     persistTermPool();
@@ -534,15 +549,26 @@
   }
 
   function removeFromTermPool(term) {
+    loadTermPoolFromStorage();
     const idx = termPool.indexOf(term);
-    if (idx === -1) return;
-    termPool.splice(idx, 1);
+    if (idx === -1) {
+      // 也可能是 IVS／空白差異，改用去 IVS 比對
+      const key = plainTermKey(term);
+      const next = termPool.filter((t) => plainTermKey(t) !== key);
+      if (next.length === termPool.length) return;
+      termPool = next;
+    } else {
+      termPool.splice(idx, 1);
+    }
     persistTermPool();
     updateTermPoolBtn();
   }
 
   function toggleTermPool(term) {
-    if (termPool.includes(term)) removeFromTermPool(term);
+    loadTermPoolFromStorage();
+    const key = plainTermKey(term);
+    const exists = termPool.some((t) => plainTermKey(t) === key);
+    if (exists) removeFromTermPool(term);
     else addToTermPool(term);
   }
 
@@ -557,8 +583,10 @@
   let termPoolWin = null;
 
   function openTermPoolPage() {
+    // 先跟儲存同步，避免用遊戲頁舊記憶體把語詞庫剛刪掉的字又寫回去
+    loadTermPoolFromStorage();
+    updateTermPoolBtn();
     if (!termPool.length) return;
-    persistTermPool();
 
     const url = `term-pool.html?t=${Date.now()}`;
     // 同一個瀏覽器視窗開新分頁；具名視窗重用時靠 localStorage + 重新載入
@@ -575,6 +603,14 @@
     termPoolWin = window.open(url, "wordpuzzleTermPool");
     if (!termPoolWin) {
       window.alert("瀏覽器擋住新分頁，請允許此網站的彈出式視窗後再試。");
+    }
+  }
+
+  function syncTermPoolFromOtherTab() {
+    loadTermPoolFromStorage();
+    updateTermPoolBtn();
+    if (!els.vocabPanel.hidden && currentChar) {
+      openVocabPanel();
     }
   }
 
@@ -1266,6 +1302,14 @@
       vocabTerms = null;
       await refreshCurrentBook();
     });
+    // 語詞庫分頁按 × 刪除後，同步遊戲頁計數／標記
+    window.addEventListener("storage", (e) => {
+      if (e.key === TERM_POOL_KEY) syncTermPoolFromOtherTab();
+    });
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") syncTermPoolFromOtherTab();
+    });
+    window.addEventListener("focus", syncTermPoolFromOtherTab);
     els.revealBtn.addEventListener("click", revealAll);
     els.autoRevealBtn.addEventListener("click", autoRevealSequential);
     if (els.stopAutoBtn) {

@@ -639,9 +639,9 @@
 
     function loadPoolTerms() {
       try {
-        const raw =
-          localStorage.getItem(STORAGE_KEY) ||
-          sessionStorage.getItem(STORAGE_KEY);
+        // 有寫過 localStorage（含空陣列 []）就以它為準，避免 session 舊資料蓋回
+        let raw = localStorage.getItem(STORAGE_KEY);
+        if (raw === null) raw = sessionStorage.getItem(STORAGE_KEY);
         const parsed = raw ? JSON.parse(raw) : [];
         return Array.isArray(parsed) ? parsed.filter(Boolean) : [];
       } catch {
@@ -695,13 +695,22 @@
     function removeTermFromPool(term) {
       const key = bankKey(term);
       if (!key) return loadPoolTerms();
-      const next = loadPoolTerms().filter((x) => bankKey(x) !== key);
+      const before = loadPoolTerms();
+      const next = before.filter((x) => bankKey(x) !== key);
+      if (next.length === before.length) {
+        els.status.textContent = `找不到「${plainTerm(term)}」，可能已被移除。`;
+        renderPool(next);
+        return next;
+      }
       savePoolTerms(next);
+      // 再讀一次確認寫入成功，避免被其他分頁舊資料蓋回
+      const verified = loadPoolTerms().filter((x) => bankKey(x) !== key);
+      if (verified.length !== next.length) savePoolTerms(verified);
       if (bankKey(currentTerm) === key) hideDetail();
-      renderPool(next);
+      renderPool(verified);
       markSavedTerms();
       els.status.textContent = `已從語詞庫移除「${plainTerm(term)}」（試算表資料仍保留）。`;
-      return next;
+      return verified;
     }
 
     async function selectTerm(term) {
