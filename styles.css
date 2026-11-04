@@ -633,6 +633,13 @@ select:disabled {
   line-height: 1.3;
 }
 
+/* 語詞全由「本課＋過去課次（含前面各冊）」生字組成 */
+.vocab-chip--learned {
+  background: #dbeafe;
+  border-color: #93c5fd;
+  color: #1e3a8a;
+}
+
 .vocab-empty {
   color: var(--ink-soft);
   font-size: 0.92rem;

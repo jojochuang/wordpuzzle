@@ -4,12 +4,13 @@
   const VOCAB_GID = "1950889734";
   const VOCAB_RANGE = "A2:CZ2882";
 
-  /** 試算表分頁：A 欄單元、B 欄生字 */
+  /** 試算表分頁（不含 TK）：A 欄單元、B 欄生字。順序用於累計「過去冊」生字。 */
   const BOOKS = [
-    { gid: "1085808977", name: "一冊" },
-    { gid: "1601198504", name: "二冊" },
-    { gid: "1424562399", name: "三冊" },
-    { gid: "1127835491", name: "四冊" },
+    { gid: "1085808977", name: "美洲一" },
+    { gid: "1601198504", name: "美洲二" },
+    { gid: "1424562399", name: "美洲三" },
+    { gid: "1127835491", name: "美洲四" },
+    { gid: "1033469457", name: "美洲五" },
   ];
 
   const TILE_COLORS = [
@@ -77,12 +78,18 @@
   let queue = [];
   let index = 0;
   let currentChar = "";
+  /** 教學中選到的冊／單元（用於判斷常用語詞是否全由已學生字組成） */
+  let teachBookIndex = 0;
+  let teachUnitIndex = 0;
   let autoRevealTimer = null;
   let confettiRaf = null;
   let nextBusy = false;
   /** @type {string[] | null} */
   let vocabTerms = null;
   let vocabLoading = null;
+  /** @type {Set<string> | null} */
+  let learnedCharCache = null;
+  let learnedCharCacheKey = "";
   const correctAudio = new Audio("sounds/correct.mp3");
   correctAudio.preload = "auto";
   correctAudio.load();
@@ -169,11 +176,49 @@
     return vocabTerms.filter((term) => term.length >= 2 && term.includes(ch));
   }
 
+  /**
+   * 已學過的生字集合＝前面各冊全部生字 ＋ 本冊「當前課次（含）以前」的生字。
+   * 美洲二含美洲一、美洲三含一+二…；不含 TK。
+   */
+  async function getLearnedCharSet(bookIndex, unitIndex) {
+    const key = `${bookIndex}:${unitIndex}`;
+    if (learnedCharCache && learnedCharCacheKey === key) return learnedCharCache;
+
+    const set = new Set();
+    const bi = Math.max(0, Math.min(bookIndex, BOOKS.length - 1));
+    const ui = Math.max(0, unitIndex);
+
+    for (let b = 0; b < bi; b += 1) {
+      const units = await loadBook(BOOKS[b].gid);
+      for (const u of units) {
+        for (const ch of u.chars) set.add(ch);
+      }
+    }
+
+    const curUnits = await loadBook(BOOKS[bi].gid);
+    const end = Math.min(ui, curUnits.length - 1);
+    for (let i = 0; i <= end; i += 1) {
+      for (const ch of curUnits[i].chars) set.add(ch);
+    }
+
+    learnedCharCache = set;
+    learnedCharCacheKey = key;
+    return set;
+  }
+
+  /** 語詞裡每個漢字都屬於已學生字集合 */
+  function isLearnedTerm(term, learned) {
+    if (!learned || !learned.size) return false;
+    const chars = extractChars(term);
+    if (!chars.length) return false;
+    return chars.every((ch) => learned.has(ch));
+  }
+
   function closeVocabPanel() {
     els.vocabPanel.hidden = true;
   }
 
-  function renderVocabList(terms, ch) {
+  async function renderVocabList(terms, ch) {
     els.vocabPanelSub.textContent = `含「${ch}」的語詞`;
     els.vocabList.innerHTML = "";
     if (!terms.length) {
@@ -184,13 +229,36 @@
       els.vocabStatus.textContent = "0 筆";
       return;
     }
-    terms.forEach((term) => {
+
+    let learned = null;
+    try {
+      learned = await getLearnedCharSet(teachBookIndex, teachUnitIndex);
+    } catch (err) {
+      console.warn("載入已學生字失敗，略過淺藍標記", err);
+    }
+
+    const ranked = [...terms].sort((a, b) => {
+      const la = isLearnedTerm(a, learned) ? 0 : 1;
+      const lb = isLearnedTerm(b, learned) ? 0 : 1;
+      if (la !== lb) return la - lb;
+      return a.localeCompare(b, "zh-Hant");
+    });
+
+    let learnedCount = 0;
+    ranked.forEach((term) => {
       const chip = document.createElement("span");
       chip.className = "vocab-chip";
+      const ok = isLearnedTerm(term, learned);
+      if (ok) {
+        chip.classList.add("vocab-chip--learned");
+        chip.title = "此語詞全由本課＋過去課次生字組成";
+        learnedCount += 1;
+      }
       chip.textContent = term;
       els.vocabList.appendChild(chip);
     });
-    els.vocabStatus.textContent = `共 ${terms.length} 筆（已去重複、去數字）`;
+    els.vocabStatus.textContent =
+      `共 ${terms.length} 筆（淺藍 ${learnedCount} 筆＝已學過的字可組成）`;
   }
 
   async function openVocabPanel() {
@@ -202,7 +270,7 @@
 
     try {
       await loadVocabTerms();
-      renderVocabList(findVocabForChar(currentChar), currentChar);
+      await renderVocabList(findVocabForChar(currentChar), currentChar);
     } catch (err) {
       console.error(err);
       els.vocabStatus.textContent =
@@ -359,6 +427,8 @@
     setStatus("正在讀取試算表…");
     els.unitSelect.disabled = true;
     els.startBtn.disabled = true;
+    learnedCharCache = null;
+    learnedCharCacheKey = "";
 
     try {
       delete cache[gid];
@@ -535,6 +605,13 @@
 
     els.unitSelect.value = String(unitIndex);
     updatePreview();
+
+    const gid = els.bookSelect.value;
+    const bi = BOOKS.findIndex((b) => b.gid === gid);
+    teachBookIndex = bi >= 0 ? bi : 0;
+    teachUnitIndex = unitIndex;
+    learnedCharCache = null;
+    learnedCharCacheKey = "";
 
     queue = shuffle(unit.chars);
     index = 0;
@@ -775,6 +852,9 @@
     els.startBtn.addEventListener("click", enterTeach);
     els.reloadBtn.addEventListener("click", async () => {
       Object.keys(cache).forEach((k) => delete cache[k]);
+      learnedCharCache = null;
+      learnedCharCacheKey = "";
+      vocabTerms = null;
       await refreshCurrentBook();
     });
     els.revealBtn.addEventListener("click", revealAll);
