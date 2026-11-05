@@ -205,6 +205,43 @@
       opacity: 0.35;
       cursor: default;
     }
+    .voice-mode-controls {
+      display: inline-flex;
+      align-items: center;
+      gap: 0;
+      border-radius: 999px;
+      overflow: hidden;
+      border: 2px solid #5c6bc0;
+      flex-shrink: 0;
+    }
+    .voice-mode-btn {
+      padding: 0.45rem 0.8rem;
+      border: none;
+      font-size: 0.88rem;
+      font-weight: 700;
+      cursor: pointer;
+      background: #fff;
+      color: #3949ab;
+      font-family: inherit;
+      line-height: 1.2;
+    }
+    .voice-mode-btn + .voice-mode-btn {
+      border-left: 1px solid #9fa8da;
+    }
+    .voice-mode-btn.active {
+      background: linear-gradient(135deg, #5c6bc0, #3949ab);
+      color: #fff;
+    }
+    .voice-mode-btn:hover:not(.active) {
+      background: #e8eaf6;
+    }
+    .page-head-actions {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.55rem;
+      justify-content: flex-end;
+    }
     .speak-stage {
       position: fixed;
       inset: 0;
@@ -285,9 +322,16 @@
           <h1>語詞庫</h1>
           <p id="sub" class="sub">共 0 個語詞</p>
         </div>
-        <button id="copyAllBtn" class="copy-all-btn" type="button" title="複製本頁語詞的 A～K 欄，可貼到自己的試算表">
-          全部複製到自己的試算表
-        </button>
+        <div class="page-head-actions">
+          <span class="voice-mode-controls" id="voiceModeControls" title="朗讀語言">
+            <button type="button" class="voice-mode-btn active" data-mode="zh">中文</button>
+            <button type="button" class="voice-mode-btn" data-mode="yue">廣東話</button>
+            <button type="button" class="voice-mode-btn" data-mode="both">中文和廣東話</button>
+          </span>
+          <button id="copyAllBtn" class="copy-all-btn" type="button" title="複製本頁語詞的 A～K 欄，可貼到自己的試算表">
+            全部複製到自己的試算表
+          </button>
+        </div>
       </div>
       <p class="hint">點選語詞查看解釋與造句；語詞旁的 × 可從本頁語詞庫移除（不會刪試算表資料）。也可直接用網址開啟，例如 <code>term-pool.html?q=開心</code>。</p>
 
@@ -754,7 +798,20 @@
       await askGemini(t);
     }
 
-    function pickVoice() {
+    /** 與聽寫考試相同：中文／廣東話／兩者 */
+    const SPEAK_LANG_KEY = "dictation_exam_speak_lang";
+    let speakLangMode = "zh"; // zh | yue | both
+    try {
+      const saved = localStorage.getItem(SPEAK_LANG_KEY);
+      if (saved === "zh" || saved === "yue" || saved === "both") speakLangMode = saved;
+    } catch (_) {}
+
+    function voiceNameHas(v, ...needles) {
+      const n = ((v && v.name) || "").toLowerCase();
+      return needles.some((x) => n.includes(String(x).toLowerCase()));
+    }
+
+    function pickVoiceZh() {
       if (!("speechSynthesis" in window)) return null;
       const voices = window.speechSynthesis.getVoices();
       if (!voices || !voices.length) return null;
@@ -762,11 +819,7 @@
         (v.lang || "").toLowerCase().startsWith("zh-tw")
       );
       if (zh.length) {
-        const m = zh.find(
-          (v) =>
-            v.name.includes("美佳") ||
-            v.name.toLowerCase().includes("meijia")
-        );
+        const m = zh.find((v) => voiceNameHas(v, "美佳", "meijia"));
         return m || zh[0];
       }
       return (
@@ -774,6 +827,99 @@
         voices[0]
       );
     }
+
+    /** 廣東話：Mac/iPad Sinji信佳 → Windows Szeto → Android/Chrome Google 廣東話 → zh-HK/yue */
+    function pickVoiceYue() {
+      if (!("speechSynthesis" in window)) return null;
+      const voices = window.speechSynthesis.getVoices();
+      if (!voices || !voices.length) return null;
+      const byName = (...needles) => voices.find((v) => voiceNameHas(v, ...needles));
+      let v = byName("sinji", "信佳");
+      if (v) return v;
+      v = byName("szeto");
+      if (v) return v;
+      v = byName("huihui");
+      if (v) return v;
+      v = voices.find((x) => {
+        if (!voiceNameHas(x, "google")) return false;
+        const l = (x.lang || "").toLowerCase();
+        return (
+          voiceNameHas(x, "cantonese", "廣東", "粤", "粵", "hong kong") ||
+          l.includes("yue") ||
+          l === "zh-hk" ||
+          l.includes("hk")
+        );
+      });
+      if (v) return v;
+      v = byName("cantonese", "廣東話", "粤语", "粵語", "hiugaai", "hiu gaai");
+      if (v) return v;
+      const yueLang = voices.filter((x) => {
+        const l = (x.lang || "").toLowerCase();
+        return (
+          l.startsWith("yue") ||
+          l === "zh-hk" ||
+          l.includes("yue") ||
+          l === "zh-yue"
+        );
+      });
+      if (yueLang.length) return yueLang[0];
+      return null;
+    }
+
+    function pickVoiceEn() {
+      if (!("speechSynthesis" in window)) return null;
+      const voices = window.speechSynthesis.getVoices();
+      if (!voices || !voices.length) return null;
+      return (
+        voices.find((v) => (v.lang || "").toLowerCase().startsWith("en-us")) ||
+        voices.find((v) => (v.lang || "").toLowerCase().startsWith("en")) ||
+        null
+      );
+    }
+
+    function delayMs(ms) {
+      return new Promise((resolve) => setTimeout(resolve, ms));
+    }
+
+    function speakOnce(text, lang, voice) {
+      return new Promise((resolve) => {
+        const u = new SpeechSynthesisUtterance(text);
+        u.lang = lang;
+        u.rate = 0.8;
+        if (voice) u.voice = voice;
+        u.onend = () => resolve();
+        u.onerror = () => resolve();
+        window.speechSynthesis.speak(u);
+      });
+    }
+
+    function syncVoiceModeButtons() {
+      const wrap = document.getElementById("voiceModeControls");
+      if (!wrap) return;
+      wrap.querySelectorAll(".voice-mode-btn").forEach((btn) => {
+        btn.classList.toggle(
+          "active",
+          btn.getAttribute("data-mode") === speakLangMode
+        );
+      });
+    }
+
+    (function initVoiceModeControls() {
+      const wrap = document.getElementById("voiceModeControls");
+      if (!wrap) return;
+      syncVoiceModeButtons();
+      wrap.addEventListener("click", (e) => {
+        const btn = e.target.closest(".voice-mode-btn");
+        if (!btn) return;
+        const mode = btn.getAttribute("data-mode");
+        if (mode !== "zh" && mode !== "yue" && mode !== "both") return;
+        speakLangMode = mode;
+        try {
+          localStorage.setItem(SPEAK_LANG_KEY, speakLangMode);
+        } catch (_) {}
+        syncVoiceModeButtons();
+      });
+    })();
 
     let speakHideTimer = null;
     let speakToken = 0;
@@ -796,7 +942,7 @@
       }, 200);
     }
 
-    /** 美佳朗讀；放大畫面保留多音字 IVS */
+    /** 中文／廣東話朗讀（與聽寫考試相同切換）；英文欄仍用英文語音。放大畫面保留多音字 IVS */
     function speak(text, isEnglish) {
       if (!("speechSynthesis" in window)) return;
       const display = String(text || "")
@@ -808,17 +954,44 @@
       const token = ++speakToken;
       window.speechSynthesis.cancel();
       showSpeakStage(display, !!isEnglish);
-      const u = new SpeechSynthesisUtterance(forSpeech || display);
-      u.lang = isEnglish ? "en-US" : "zh-TW";
-      u.rate = 0.8;
-      const v = pickVoice();
-      if (v) u.voice = v;
+
       const finish = () => {
         if (token === speakToken) hideSpeakStage();
       };
-      u.onend = finish;
-      u.onerror = finish;
-      window.speechSynthesis.speak(u);
+
+      if (isEnglish) {
+        const u = new SpeechSynthesisUtterance(forSpeech || display);
+        u.lang = "en-US";
+        u.rate = 0.8;
+        const v = pickVoiceEn();
+        if (v) u.voice = v;
+        u.onend = finish;
+        u.onerror = finish;
+        window.speechSynthesis.speak(u);
+        return;
+      }
+
+      const mode = speakLangMode;
+      const spoken = forSpeech || display;
+      (async () => {
+        try {
+          if (mode === "zh" || mode === "both") {
+            await speakOnce(spoken, "zh-TW", pickVoiceZh());
+          }
+          if (token !== speakToken) return;
+          if (mode === "both") await delayMs(400);
+          if (token !== speakToken) return;
+          if (mode === "yue" || mode === "both") {
+            await speakOnce(
+              spoken,
+              "zh-HK",
+              pickVoiceYue() || pickVoiceZh()
+            );
+          }
+        } finally {
+          finish();
+        }
+      })();
     }
 
     els.speakStage.addEventListener("click", () => {
@@ -925,8 +1098,14 @@
     }
 
     if ("speechSynthesis" in window) {
-      window.speechSynthesis.onvoiceschanged = () => pickVoice();
-      pickVoice();
+      window.speechSynthesis.onvoiceschanged = () => {
+        pickVoiceZh();
+        pickVoiceYue();
+        pickVoiceEn();
+      };
+      pickVoiceZh();
+      pickVoiceYue();
+      pickVoiceEn();
     }
 
     function parseHashRow(raw, fallbackTerm) {
