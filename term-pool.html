@@ -1716,6 +1716,21 @@
       }
     });
 
+    if (els.swipeListenBtn) {
+      els.swipeListenBtn.addEventListener("click", () => {
+        openSwipeAlbum(currentTerm);
+      });
+    }
+    if (els.swipeAlbumClose) {
+      els.swipeAlbumClose.addEventListener("click", () => closeSwipeAlbum());
+    }
+    if (els.swipeAlbumPrev) {
+      els.swipeAlbumPrev.addEventListener("click", () => swipeAlbumGo(-1));
+    }
+    if (els.swipeAlbumNext) {
+      els.swipeAlbumNext.addEventListener("click", () => swipeAlbumGo(1));
+    }
+
     els.saveSheetBtn.addEventListener("click", async () => {
       try {
         const cols = parseHashRow(els.geminiPaste.value, currentTerm);
