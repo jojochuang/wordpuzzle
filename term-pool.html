@@ -317,7 +317,7 @@
     }
     .swipe-album-stage:active { cursor: grabbing; }
     .swipe-album-card {
-      max-width: min(920px, 94vw);
+      max-width: min(96vw, 1100px);
       text-align: center;
       font-family: "BpmfZihiKaiStd", "標楷體", serif;
       font-size: clamp(2rem, 6.5vw, 4.2rem);
@@ -326,6 +326,18 @@
       letter-spacing: 0.04em;
       transition: transform 180ms ease, opacity 180ms ease;
       will-change: transform, opacity;
+    }
+    /* 語詞：長寬約 2 倍 */
+    .swipe-album-card.is-term {
+      font-size: clamp(4rem, 13vw, 8.4rem);
+      line-height: 2.1;
+      letter-spacing: 0.08em;
+    }
+    /* 解釋／短句／長句：長寬約 1.5 倍 */
+    .swipe-album-card.is-sentence {
+      font-size: clamp(3rem, 9.75vw, 6.3rem);
+      line-height: 2.05;
+      letter-spacing: 0.06em;
     }
     .swipe-album-card.swipe-out-left {
       transform: translateX(-28%) scale(0.96);
@@ -1230,11 +1242,19 @@
       const cur = swipeSlides[swipeIndex];
       updateSwipeNav();
       const card = els.swipeAlbumCard;
-      card.classList.remove("swipe-in", "swipe-out-left", "swipe-out-right");
+      card.classList.remove(
+        "swipe-in",
+        "swipe-out-left",
+        "swipe-out-right",
+        "is-term",
+        "is-sentence"
+      );
       if (dir === "next") card.classList.add("swipe-out-left");
       else if (dir === "prev") card.classList.add("swipe-out-right");
       requestAnimationFrame(() => {
         card.textContent = cur ? cur.text : "";
+        card.classList.toggle("is-term", !!(cur && cur.label === "語詞"));
+        card.classList.toggle("is-sentence", !!(cur && cur.label !== "語詞"));
         card.classList.remove("swipe-out-left", "swipe-out-right");
         card.classList.add("swipe-in");
       });
@@ -1248,21 +1268,54 @@
       showSwipeSlide(next, delta > 0 ? "next" : "prev");
     }
 
+    function requestSwipeFullscreen() {
+      const el = els.swipeAlbum;
+      if (!el) return Promise.resolve();
+      try {
+        if (document.fullscreenElement === el || document.webkitFullscreenElement === el) {
+          return Promise.resolve();
+        }
+        if (el.requestFullscreen) return el.requestFullscreen();
+        if (el.webkitRequestFullscreen) return Promise.resolve(el.webkitRequestFullscreen());
+      } catch (_) {}
+      return Promise.resolve();
+    }
+
+    function exitSwipeFullscreen() {
+      try {
+        if (document.fullscreenElement) return document.exitFullscreen();
+        if (document.webkitFullscreenElement && document.webkitExitFullscreen) {
+          return Promise.resolve(document.webkitExitFullscreen());
+        }
+      } catch (_) {}
+      return Promise.resolve();
+    }
+
     function closeSwipeAlbum() {
       if (!isSwipeAlbumOpen()) return;
       els.swipeAlbum.hidden = true;
       speakToken += 1;
       if ("speechSynthesis" in window) window.speechSynthesis.cancel();
       swipeBusy = false;
+      exitSwipeFullscreen().catch(() => {});
     }
 
     async function openSwipeAlbum(startTerm) {
       if (!els.swipeListenBtn) return;
       els.swipeListenBtn.disabled = true;
       els.status.textContent = "正在整理中文語詞與句子…";
+      hideSpeakStage();
+      // 先顯示並進入全螢幕（須在點擊手勢內，不可先 await）
+      els.swipeAlbum.hidden = false;
+      els.swipeAlbumCard.textContent = "載入中…";
+      els.swipeAlbumCard.classList.remove("is-term", "is-sentence");
+      els.swipeAlbumLabel.textContent = "滑動聽讀";
+      els.swipeAlbumProgress.textContent = "…";
+      requestSwipeFullscreen().catch(() => {});
       try {
         const slides = await buildSwipeSlides();
         if (!slides.length) {
+          closeSwipeAlbum();
           els.status.textContent = "沒有可朗讀的中文內容。請先加入語詞庫並確認試算表有資料。";
           return;
         }
@@ -1273,17 +1326,36 @@
           const found = slides.findIndex((s) => bankKey(s.term) === want);
           if (found >= 0) start = found;
         }
-        hideSpeakStage();
-        els.swipeAlbum.hidden = false;
         showSwipeSlide(start, null);
         els.status.textContent = `滑動聽讀：共 ${slides.length} 句中文（不含英文）。`;
       } catch (err) {
         console.error(err);
+        closeSwipeAlbum();
         els.status.textContent = `無法開啟滑動聽讀：${err.message}`;
       } finally {
         els.swipeListenBtn.disabled = false;
       }
     }
+
+    document.addEventListener("fullscreenchange", () => {
+      if (
+        isSwipeAlbumOpen() &&
+        !document.fullscreenElement &&
+        !document.webkitFullscreenElement
+      ) {
+        // 使用者用系統手勢退出全螢幕時，一併關閉聽讀
+        closeSwipeAlbum();
+      }
+    });
+    document.addEventListener("webkitfullscreenchange", () => {
+      if (
+        isSwipeAlbumOpen() &&
+        !document.fullscreenElement &&
+        !document.webkitFullscreenElement
+      ) {
+        closeSwipeAlbum();
+      }
+    });
 
     (function bindSwipeAlbumGestures() {
       const stage = els.swipeAlbumStage;
