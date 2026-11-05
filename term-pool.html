@@ -215,15 +215,16 @@
       flex-shrink: 0;
     }
     .voice-mode-btn {
-      padding: 0.45rem 0.8rem;
+      padding: 0.4rem 0.65rem;
       border: none;
-      font-size: 0.88rem;
+      font-size: 0.82rem;
       font-weight: 700;
       cursor: pointer;
       background: #fff;
       color: #3949ab;
       font-family: inherit;
       line-height: 1.2;
+      white-space: nowrap;
     }
     .voice-mode-btn + .voice-mode-btn {
       border-left: 1px solid #9fa8da;
@@ -467,6 +468,7 @@
             <button type="button" class="voice-mode-btn active" data-mode="zh">中文</button>
             <button type="button" class="voice-mode-btn" data-mode="yue">廣東話</button>
             <button type="button" class="voice-mode-btn" data-mode="both">中文和廣東話</button>
+            <button type="button" class="voice-mode-btn" data-mode="zh_en">中文和英文</button>
           </span>
           <button id="swipeListenBtn" class="swipe-listen-btn" type="button" title="全螢幕左右滑聽中文語詞與句子">
             滑動聽讀
@@ -476,7 +478,7 @@
           </button>
         </div>
       </div>
-      <p class="hint">點選語詞查看解釋與造句；或按「滑動聽讀」像相簿一樣左右滑，只聽中文語詞／句子（不含英文）。語詞旁的 × 可從本頁語詞庫移除。</p>
+      <p class="hint">點選語詞查看解釋與造句；或按「滑動聽讀」左右滑聽讀。選「中文和英文」時，中文唸完會接著唸對應英文翻譯。語詞旁的 × 可從本頁語詞庫移除。</p>
 
       <p id="status" class="status"></p>
       <div id="list" class="list"></div>
@@ -581,8 +583,10 @@
       swipeAlbumNext: document.getElementById("swipeAlbumNext"),
     };
 
-    /** 只聽中文：語詞、解釋、短句、長句（略過所有英文欄） */
+    /** 滑動聽讀主畫面：語詞、解釋、短句、長句（英文對照另存 enText） */
     const ZH_FIELD_INDICES = [0, 1, 3, 5, 7, 9];
+    /** 中文欄 → 對應英文欄（語詞無英文） */
+    const ZH_EN_PAIR = { 1: 2, 3: 4, 5: 6, 7: 8, 9: 10 };
 
     function plainTerm(term) {
       return String(term || "")
@@ -971,13 +975,36 @@
       await askGemini(t);
     }
 
-    /** 與聽寫考試相同：中文／廣東話／兩者 */
-    const SPEAK_LANG_KEY = "dictation_exam_speak_lang";
-    let speakLangMode = "zh"; // zh | yue | both
+    /** 朗讀語言：中文／廣東話／中文+廣東話／中文+英文 */
+    const SPEAK_LANG_KEY = "wordpuzzle-speak-lang";
+    const SPEAK_LANG_KEY_LEGACY = "dictation_exam_speak_lang";
+    let speakLangMode = "zh"; // zh | yue | both | zh_en
     try {
-      const saved = localStorage.getItem(SPEAK_LANG_KEY);
-      if (saved === "zh" || saved === "yue" || saved === "both") speakLangMode = saved;
+      const saved =
+        localStorage.getItem(SPEAK_LANG_KEY) ||
+        localStorage.getItem(SPEAK_LANG_KEY_LEGACY);
+      if (
+        saved === "zh" ||
+        saved === "yue" ||
+        saved === "both" ||
+        saved === "zh_en"
+      ) {
+        speakLangMode = saved;
+      }
     } catch (_) {}
+
+    function normalizeEnText(text) {
+      return String(text || "")
+        .replace(/（空）/g, "")
+        .replace(/[\u200B-\u200D\uFEFF]/g, "")
+        .trim();
+    }
+
+    function pairedEnglishFromCols(cols, zhIndex) {
+      const enIdx = ZH_EN_PAIR[zhIndex];
+      if (enIdx == null || !cols) return "";
+      return normalizeEnText(cols[enIdx]);
+    }
 
     function voiceNameHas(v, ...needles) {
       const n = ((v && v.name) || "").toLowerCase();
@@ -1085,7 +1112,14 @@
         const btn = e.target.closest(".voice-mode-btn");
         if (!btn) return;
         const mode = btn.getAttribute("data-mode");
-        if (mode !== "zh" && mode !== "yue" && mode !== "both") return;
+        if (
+          mode !== "zh" &&
+          mode !== "yue" &&
+          mode !== "both" &&
+          mode !== "zh_en"
+        ) {
+          return;
+        }
         speakLangMode = mode;
         try {
           localStorage.setItem(SPEAK_LANG_KEY, speakLangMode);
@@ -1115,10 +1149,11 @@
       }, 200);
     }
 
-    /** 中文／廣東話朗讀；opts.noStage 時不跳放大層（滑動聽讀自己顯示） */
+    /** 朗讀；opts.noStage 不跳放大層；opts.enText 供「中文和英文」接續 */
     function speak(text, isEnglish, opts) {
       if (!("speechSynthesis" in window)) return;
       const noStage = !!(opts && opts.noStage);
+      const enFollow = normalizeEnText(opts && opts.enText);
       const display = String(text || "")
         .replace(/（空）/g, "")
         .replace(/[\u200B-\u200D\uFEFF]/g, "")
@@ -1149,18 +1184,29 @@
       const spoken = forSpeech || display;
       (async () => {
         try {
-          if (mode === "zh" || mode === "both") {
+          if (mode === "zh" || mode === "both" || mode === "zh_en") {
             await speakOnce(spoken, "zh-TW", pickVoiceZh());
           }
           if (token !== speakToken) return;
-          if (mode === "both") await delayMs(400);
-          if (token !== speakToken) return;
-          if (mode === "yue" || mode === "both") {
+          if (mode === "both") {
+            await delayMs(400);
+            if (token !== speakToken) return;
             await speakOnce(
               spoken,
               "zh-HK",
               pickVoiceYue() || pickVoiceZh()
             );
+          } else if (mode === "yue") {
+            await speakOnce(
+              spoken,
+              "zh-HK",
+              pickVoiceYue() || pickVoiceZh()
+            );
+          } else if (mode === "zh_en" && enFollow) {
+            await delayMs(400);
+            if (token !== speakToken) return;
+            if (!noStage) showSpeakStage(enFollow, true);
+            await speakOnce(enFollow, "en-US", pickVoiceEn());
           }
         } finally {
           finish();
@@ -1210,6 +1256,7 @@
             term: String(cols[0] || term).trim() || term,
             label: FIELD_LABELS[i] || "句子",
             text,
+            enText: pairedEnglishFromCols(cols, i),
             fieldIndex: i,
           });
         }
@@ -1258,7 +1305,9 @@
         card.classList.remove("swipe-out-left", "swipe-out-right");
         card.classList.add("swipe-in");
       });
-      if (cur) speak(cur.text, false, { noStage: true });
+      if (cur) {
+        speak(cur.text, false, { noStage: true, enText: cur.enText || "" });
+      }
     }
 
     function swipeAlbumGo(delta) {
@@ -1411,7 +1460,12 @@
         }
         if (!moved) {
           const cur = swipeSlides[swipeIndex];
-          if (cur) speak(cur.text, false, { noStage: true });
+          if (cur) {
+            speak(cur.text, false, {
+              noStage: true,
+              enText: cur.enText || "",
+            });
+          }
         }
       }
 
@@ -1434,7 +1488,12 @@
         } else if (e.key === " " || e.key === "Enter") {
           e.preventDefault();
           const cur = swipeSlides[swipeIndex];
-          if (cur) speak(cur.text, false, { noStage: true });
+          if (cur) {
+            speak(cur.text, false, {
+              noStage: true,
+              enText: cur.enText || "",
+            });
+          }
         }
       });
     })();
@@ -1445,7 +1504,7 @@
       hideSpeakStage();
     });
 
-    function makeSpeakBtn(text, isEnglish, title) {
+    function makeSpeakBtn(text, isEnglish, title, enText) {
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = "tts-btn";
@@ -1456,7 +1515,9 @@
       if (ok) {
         btn.addEventListener("click", (e) => {
           e.stopPropagation();
-          speak(text, !!isEnglish);
+          speak(text, !!isEnglish, {
+            enText: isEnglish ? "" : enText || "",
+          });
         });
       }
       return btn;
@@ -1481,7 +1542,12 @@
         lab.textContent = label;
         head.appendChild(lab);
         head.appendChild(
-          makeSpeakBtn(text, isEnglishField(label), `朗讀${label}`)
+          makeSpeakBtn(
+            text,
+            isEnglishField(label),
+            `朗讀${label}`,
+            isEnglishField(label) ? "" : pairedEnglishFromCols(cols, i)
+          )
         );
 
         const val = document.createElement("div");
